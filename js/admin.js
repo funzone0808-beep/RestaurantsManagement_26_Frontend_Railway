@@ -79,7 +79,14 @@ const state = {
   profileHeroHotelSlug: "",
   profileThemeBase: {},
   profileThemeHotelSlug: "",
-  profileThemeSectionOrderDirty: false
+  profileThemeSectionOrderDirty: false,
+  hotelSavedLaunchReadiness: null,
+  hotelDomainResolveStatus: {
+    outcome: "idle",
+    checkedHost: "",
+    resolvedSlug: "",
+    matchesCurrentHotel: false
+  }
 };
 
 const PROFILE_THEME_DEFAULTS = {
@@ -193,6 +200,528 @@ function escapeHTML(value = "") {
 
 function normalizeValue(value = "") {
   return String(value).trim().toLowerCase();
+}
+
+function normalizeHotelPrimaryDomainInput(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/^www\./, "");
+}
+
+function normalizeHotelSubdomainInput(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getHotelDomainResolveHostInputValue() {
+  return normalizeHotelPrimaryDomainInput(
+    document.getElementById("hotelDomainResolveHostInput")?.value
+  );
+}
+
+function setHotelDomainResolveStatus(status = {}) {
+  state.hotelDomainResolveStatus = {
+    outcome: String(status.outcome || "idle").trim() || "idle",
+    checkedHost: String(status.checkedHost || "").trim(),
+    resolvedSlug: String(status.resolvedSlug || "").trim(),
+    matchesCurrentHotel: !!status.matchesCurrentHotel
+  };
+}
+
+function renderHotelDomainLaunchChecklist() {
+  const container = document.getElementById("hotelDomainLaunchChecklist");
+  if (!container) return;
+
+  const hotelSlug = document.getElementById("hotelSlugInput")?.value.trim() || "";
+  const primaryDomain = normalizeHotelPrimaryDomainInput(
+    document.getElementById("hotelPrimaryDomainInput")?.value
+  );
+  const subdomain = normalizeHotelSubdomainInput(
+    document.getElementById("hotelSubdomainInput")?.value
+  );
+  const resolveStatus =
+    state.hotelDomainResolveStatus &&
+    typeof state.hotelDomainResolveStatus === "object"
+      ? state.hotelDomainResolveStatus
+      : {
+          outcome: "idle",
+          checkedHost: "",
+          resolvedSlug: "",
+          matchesCurrentHotel: false
+        };
+  const resolveMatchesCurrentSlug =
+    !!resolveStatus.resolvedSlug &&
+    !!hotelSlug &&
+    resolveStatus.resolvedSlug.toLowerCase() === hotelSlug.toLowerCase();
+  const hasRoutingIdentity = !!hotelSlug && !!(primaryDomain || subdomain);
+  const resolveReady =
+    resolveStatus.outcome === "matched" &&
+    (
+      !hotelSlug ||
+      resolveMatchesCurrentSlug ||
+      resolveStatus.matchesCurrentHotel
+    );
+  const resolveNeedsAttention =
+    resolveStatus.outcome === "failed" || resolveStatus.outcome === "mismatched";
+  const routingTargetLabel = primaryDomain || (subdomain ? `${subdomain} + trusted shared host` : "Not set");
+  const subdomainNote = subdomain
+    ? "If you plan to use a shared platform subdomain, confirm the backend trusted public host env already includes that public domain family."
+    : "Add a subdomain only when this hotel should also work on your shared platform host.";
+
+  container.innerHTML = `
+    <strong>Domain Launch Checklist</strong>
+    <div style="margin-top: 8px;">
+      ${buildAdminStateBadge(hasRoutingIdentity ? "Ready" : "Needed", hasRoutingIdentity ? "success" : "warning")}
+      <span style="margin-left: 8px;">Hotel routing identity: ${escapeHTML(routingTargetLabel)}</span>
+    </div>
+    <div style="margin-top: 8px;">
+      ${buildAdminStateBadge("Manual", "neutral")}
+      <span style="margin-left: 8px;">Point the chosen public hostname to the shared frontend deploy before opening the site to customers.</span>
+    </div>
+    <div style="margin-top: 8px;">
+      ${
+        resolveReady
+          ? buildAdminStateBadge("Verified", "success")
+          : resolveNeedsAttention
+            ? buildAdminStateBadge("Attention", "warning")
+            : buildAdminStateBadge("Pending", "neutral")
+      }
+      <span style="margin-left: 8px;">
+        ${
+          resolveReady
+            ? `Tenant resolve last matched ${escapeHTML(resolveStatus.checkedHost || primaryDomain || hotelSlug)} to ${escapeHTML(resolveStatus.resolvedSlug || hotelSlug)}.`
+            : resolveNeedsAttention
+              ? `Recheck tenant resolve for ${escapeHTML(resolveStatus.checkedHost || primaryDomain || hotelSlug || "the planned hostname")} until it points to this hotel.`
+              : "Run the hostname check after saving the hotel record and DNS change."
+        }
+      </span>
+    </div>
+    <div style="margin-top: 8px;">
+      ${buildAdminStateBadge(subdomain ? "Review" : "Optional", subdomain ? "neutral" : "neutral")}
+      <span style="margin-left: 8px;">${escapeHTML(subdomainNote)}</span>
+    </div>
+  `;
+}
+
+function buildHotelDeployValuesText() {
+  const hotelSlug = document.getElementById("hotelSlugInput")?.value.trim() || "";
+  const hotelName = document.getElementById("hotelNameInput")?.value.trim() || "";
+  const primaryDomain = normalizeHotelPrimaryDomainInput(
+    document.getElementById("hotelPrimaryDomainInput")?.value
+  );
+  const subdomain = normalizeHotelSubdomainInput(
+    document.getElementById("hotelSubdomainInput")?.value
+  );
+  const checkedHost =
+    state.hotelDomainResolveStatus?.checkedHost ||
+    getHotelDomainResolveHostInputValue() ||
+    primaryDomain;
+  const resolvedSlug = state.hotelDomainResolveStatus?.resolvedSlug || "";
+  const resolveOutcome = state.hotelDomainResolveStatus?.outcome || "idle";
+
+  return [
+    `Hotel Name: ${hotelName || "-"}`,
+    `Hotel Slug: ${hotelSlug || "-"}`,
+    `Primary Domain: ${primaryDomain || "-"}`,
+    `Subdomain: ${subdomain || "-"}`,
+    `Tenant Resolve Host: ${checkedHost || "-"}`,
+    `Last Resolve Outcome: ${resolveOutcome || "-"}`,
+    `Last Resolved Slug: ${resolvedSlug || "-"}`
+  ].join(" | ");
+}
+
+function buildHotelLaunchNotesText() {
+  const hotelSlug = document.getElementById("hotelSlugInput")?.value.trim() || "-";
+  const hotelName = document.getElementById("hotelNameInput")?.value.trim() || "-";
+  const primaryDomain = normalizeHotelPrimaryDomainInput(
+    document.getElementById("hotelPrimaryDomainInput")?.value
+  ) || "-";
+  const subdomain = normalizeHotelSubdomainInput(
+    document.getElementById("hotelSubdomainInput")?.value
+  ) || "-";
+  const resolveStatus =
+    state.hotelDomainResolveStatus &&
+    typeof state.hotelDomainResolveStatus === "object"
+      ? state.hotelDomainResolveStatus
+      : {
+          outcome: "idle",
+          checkedHost: "",
+          resolvedSlug: "",
+          matchesCurrentHotel: false
+        };
+  const readiness =
+    state.hotelSavedLaunchReadiness &&
+    typeof state.hotelSavedLaunchReadiness === "object"
+      ? state.hotelSavedLaunchReadiness
+      : null;
+  const readinessWarnings = Array.isArray(readiness?.warnings)
+    ? readiness.warnings.filter(Boolean)
+    : [];
+  const trustedHosts = Array.isArray(readiness?.trustedSharedParentHosts)
+    ? readiness.trustedSharedParentHosts
+    : [];
+  const checks = readiness?.checks && typeof readiness.checks === "object"
+    ? readiness.checks
+    : {};
+  const resolveTargets = readiness?.resolveTargets && typeof readiness.resolveTargets === "object"
+    ? readiness.resolveTargets
+    : {};
+
+  return [
+    "Hotel Launch Notes",
+    `Hotel Name: ${hotelName}`,
+    `Hotel Slug: ${hotelSlug}`,
+    `Primary Domain: ${primaryDomain}`,
+    `Subdomain: ${subdomain}`,
+    "",
+    "Saved Backend Readiness",
+    `Exact Primary Ready: ${checks.exactPrimaryReady ? "Yes" : "No"}`,
+    `Shared Subdomain Ready: ${checks.sharedSubdomainReady ? "Yes" : "No"}`,
+    `Trusted Shared Parent Hosts: ${trustedHosts.length ? trustedHosts.join(", ") : "None configured"}`,
+    `Recommended Shared Subdomain Host: ${resolveTargets.recommendedSharedSubdomainHost || "-"}`,
+    "",
+    "Latest Tenant Resolve Check",
+    `Checked Host: ${resolveStatus.checkedHost || "-"}`,
+    `Outcome: ${resolveStatus.outcome || "idle"}`,
+    `Resolved Slug: ${resolveStatus.resolvedSlug || "-"}`,
+    `Matches Current Hotel: ${resolveStatus.matchesCurrentHotel ? "Yes" : "No"}`,
+    "",
+    "Deploy Values",
+    buildHotelDeployValuesText(),
+    "",
+    "Warnings",
+    ...(readinessWarnings.length ? readinessWarnings : ["None"])
+  ].join("\n");
+}
+
+function renderHotelSavedLaunchReadiness() {
+  const container = document.getElementById("hotelSavedLaunchReadiness");
+  if (!container) return;
+
+  const readiness =
+    state.hotelSavedLaunchReadiness &&
+    typeof state.hotelSavedLaunchReadiness === "object"
+      ? state.hotelSavedLaunchReadiness
+      : null;
+
+  if (!readiness) {
+    container.className = "admin-row";
+    container.innerHTML = "<strong>Saved Launch Readiness</strong><div style=\"margin-top: 6px;\">Open an existing hotel to load the backend readiness summary.</div>";
+    renderHotelLaunchNotesHelper();
+    return;
+  }
+
+  const warnings = Array.isArray(readiness.warnings) ? readiness.warnings.filter(Boolean) : [];
+  const toneClassName = warnings.length ? "admin-row admin-attention-row" : "admin-row";
+  const sharedParents = Array.isArray(readiness.trustedSharedParentHosts)
+    ? readiness.trustedSharedParentHosts
+    : [];
+  const checks = readiness.checks && typeof readiness.checks === "object"
+    ? readiness.checks
+    : {};
+  const resolveTargets = readiness.resolveTargets && typeof readiness.resolveTargets === "object"
+    ? readiness.resolveTargets
+    : {};
+
+  container.className = toneClassName;
+  container.innerHTML = `
+    <strong>Saved Launch Readiness</strong>
+    <div style="margin-top: 8px;">
+      ${buildBooleanStateBadge(!!checks.exactPrimaryReady, {
+        onLabel: "Primary Ready",
+        offLabel: "Primary Pending"
+      })}
+      <span style="margin-left: 8px;">Exact-domain routing: ${escapeHTML(resolveTargets.primaryDomainHost || "not configured")}</span>
+    </div>
+    <div style="margin-top: 8px;">
+      ${buildBooleanStateBadge(!!checks.sharedSubdomainReady, {
+        onLabel: "Shared Subdomain Ready",
+        offLabel: "Shared Subdomain Pending"
+      })}
+      <span style="margin-left: 8px;">Shared subdomain target: ${escapeHTML(resolveTargets.recommendedSharedSubdomainHost || "not available yet")}</span>
+    </div>
+    <div style="margin-top: 8px;">
+      ${buildAdminStateBadge(sharedParents.length ? "Trusted Hosts" : "No Trusted Hosts", sharedParents.length ? "success" : "warning")}
+      <span style="margin-left: 8px;">${escapeHTML(sharedParents.length ? sharedParents.join(", ") : "No shared public parent hosts configured in backend env.")}</span>
+    </div>
+    ${
+      warnings.length
+        ? `<div style="margin-top: 8px;">${warnings.map((warning) => `<div>${escapeHTML(warning)}</div>`).join("")}</div>`
+        : `<div style="margin-top: 8px;">Saved hotel record looks ready for the configured routing modes.</div>`
+    }
+  `;
+  renderHotelLaunchNotesHelper();
+}
+
+function renderHotelDeployValuesHelper(message = "") {
+  const output = document.getElementById("hotelDeployValuesOutput");
+  const help = document.getElementById("hotelDeployValuesHelp");
+  if (!output) return;
+
+  output.value = buildHotelDeployValuesText();
+
+  if (help) {
+    help.textContent = message || "Keep this handy while updating DNS, tenant data, and deploy notes.";
+  }
+  renderHotelLaunchNotesHelper();
+}
+
+function renderHotelLaunchNotesHelper(message = "") {
+  const output = document.getElementById("hotelLaunchNotesOutput");
+  const help = document.getElementById("hotelLaunchNotesHelp");
+  if (!output) return;
+
+  output.value = buildHotelLaunchNotesText();
+
+  if (help) {
+    help.textContent = message || "Use this for rollout handoff or deployment checklists.";
+  }
+}
+
+async function fetchHotelLaunchReadiness(hotelId) {
+  return fetchJson(`${API_BASE}/hotels/${encodeURIComponent(hotelId)}/launch-readiness`);
+}
+
+async function loadHotelLaunchReadiness(hotelId = "") {
+  const normalizedHotelId = String(hotelId || "").trim();
+
+  if (!normalizedHotelId) {
+    state.hotelSavedLaunchReadiness = null;
+    renderHotelSavedLaunchReadiness();
+    return;
+  }
+
+  try {
+    const result = await fetchHotelLaunchReadiness(normalizedHotelId);
+    state.hotelSavedLaunchReadiness = result.readiness || null;
+    renderHotelSavedLaunchReadiness();
+  } catch (error) {
+    state.hotelSavedLaunchReadiness = {
+      warnings: [error.message || "Failed to load saved launch readiness."],
+      checks: {},
+      resolveTargets: {},
+      trustedSharedParentHosts: []
+    };
+    renderHotelSavedLaunchReadiness();
+  }
+}
+
+async function copyHotelDeployValues() {
+  const output = document.getElementById("hotelDeployValuesOutput");
+  const value = buildHotelDeployValuesText();
+
+  if (output) {
+    output.value = value;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else if (output) {
+      output.select();
+      document.execCommand("copy");
+    }
+
+    renderHotelDeployValuesHelper("Copied deploy values. Paste them into your DNS/deploy checklist.");
+  } catch (error) {
+    console.error("Hotel deploy values copy failed:", error);
+    renderHotelDeployValuesHelper("Copy failed. Select the deploy values manually.");
+  }
+}
+
+async function copyHotelLaunchNotes() {
+  const output = document.getElementById("hotelLaunchNotesOutput");
+  const value = buildHotelLaunchNotesText();
+
+  if (output) {
+    output.value = value;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else if (output) {
+      output.select();
+      document.execCommand("copy");
+    }
+
+    renderHotelLaunchNotesHelper("Copied launch notes. Paste them into your rollout handoff.");
+  } catch (error) {
+    console.error("Hotel launch notes copy failed:", error);
+    renderHotelLaunchNotesHelper("Copy failed. Select the launch notes manually.");
+  }
+}
+
+function setHotelDomainResolveOutput({
+  tone = "neutral",
+  title = "",
+  detail = "",
+  lines = []
+} = {}) {
+  const output = document.getElementById("hotelDomainResolveResult");
+  if (!output) return;
+
+  const safeLines = Array.isArray(lines) ? lines.filter(Boolean) : [];
+  const toneClassName =
+    tone === "warning"
+      ? "admin-row admin-attention-row"
+      : "admin-row";
+  const lineMarkup = safeLines.length
+    ? safeLines.map((line) => `<div>${escapeHTML(line)}</div>`).join("")
+    : "";
+
+  output.className = toneClassName;
+  output.innerHTML = `
+    <strong>${escapeHTML(title || "No hostname checked yet.")}</strong>
+    ${
+      detail
+        ? `<div style="margin-top: 6px;">${escapeHTML(detail)}</div>`
+        : ""
+    }
+    ${lineMarkup ? `<div style="margin-top: 8px;">${lineMarkup}</div>` : ""}
+  `;
+}
+
+function resetHotelDomainResolveState({
+  host = "",
+  message = "No hostname checked yet."
+} = {}) {
+  const input = document.getElementById("hotelDomainResolveHostInput");
+
+  if (input) {
+    input.value = host || "";
+  }
+
+  setHotelDomainResolveStatus({
+    outcome: "idle",
+    checkedHost: host || "",
+    resolvedSlug: "",
+    matchesCurrentHotel: false
+  });
+  setHotelDomainResolveOutput({
+    tone: "neutral",
+    title: message
+  });
+  renderHotelDomainLaunchChecklist();
+  renderHotelSavedLaunchReadiness();
+  renderHotelDeployValuesHelper();
+  renderHotelLaunchNotesHelper();
+}
+
+async function resolveTenantHost(host) {
+  return fetchJson(
+    `${BASE_API}/tenant/resolve?host=${encodeURIComponent(host)}`
+  );
+}
+
+function fillHotelResolveHostFromPrimaryDomain() {
+  const primaryDomainInput = document.getElementById("hotelPrimaryDomainInput");
+  const normalizedPrimaryDomain = normalizeHotelPrimaryDomainInput(
+    primaryDomainInput?.value
+  );
+
+  if (!normalizedPrimaryDomain) {
+    setHotelDomainResolveOutput({
+      tone: "warning",
+      title: "Primary domain is empty.",
+      detail: "Enter a primary domain first or paste the hostname you want to test."
+    });
+    return "";
+  }
+
+  resetHotelDomainResolveState({
+    host: normalizedPrimaryDomain,
+    message: "Hostname ready. Run the check when you want to verify tenant routing."
+  });
+  return normalizedPrimaryDomain;
+}
+
+async function checkHotelDomainResolve() {
+  const currentHotelSlug = document.getElementById("hotelSlugInput")?.value.trim() || "";
+  const host = getHotelDomainResolveHostInputValue();
+
+  if (!host) {
+    setHotelDomainResolveOutput({
+      tone: "warning",
+      title: "Enter a hostname first.",
+      detail: "Use the exact public host you want the tenant resolver to match."
+    });
+    return;
+  }
+
+  const hostInput = document.getElementById("hotelDomainResolveHostInput");
+  if (hostInput) {
+    hostInput.value = host;
+  }
+
+  setHotelDomainResolveOutput({
+    tone: "neutral",
+    title: "Checking tenant routing...",
+    detail: `Resolving ${host}`
+  });
+
+  try {
+    const result = await resolveTenantHost(host);
+    const hotel = result?.hotel || {};
+    const resolvedSlug = String(hotel.slug || "").trim();
+    const matchesCurrentHotel =
+      resolvedSlug &&
+      currentHotelSlug &&
+      resolvedSlug.toLowerCase() === currentHotelSlug.toLowerCase();
+    setHotelDomainResolveStatus({
+      outcome: currentHotelSlug && !matchesCurrentHotel ? "mismatched" : "matched",
+      checkedHost: host,
+      resolvedSlug,
+      matchesCurrentHotel
+    });
+    const tone = currentHotelSlug && !matchesCurrentHotel ? "warning" : "neutral";
+    const title = currentHotelSlug
+      ? matchesCurrentHotel
+        ? "Hostname resolves to this hotel."
+        : "Hostname resolves to a different hotel."
+      : "Hostname resolves successfully.";
+
+    setHotelDomainResolveOutput({
+      tone,
+      title,
+      detail: `${host} -> ${hotel.name || resolvedSlug || "Unknown hotel"}`,
+      lines: [
+        `Resolved slug: ${resolvedSlug || "unknown"}`,
+        `Primary domain: ${hotel.primary_domain || "none"}`,
+        `Subdomain: ${hotel.subdomain || "none"}`,
+        `Active: ${hotel.is_active === false ? "No" : "Yes"}`,
+        currentHotelSlug
+          ? `Current form slug: ${currentHotelSlug}`
+          : ""
+      ]
+    });
+    renderHotelDomainLaunchChecklist();
+    renderHotelDeployValuesHelper("Deploy values refreshed with the latest tenant resolve result.");
+  } catch (error) {
+    setHotelDomainResolveStatus({
+      outcome: "failed",
+      checkedHost: host,
+      resolvedSlug: "",
+      matchesCurrentHotel: false
+    });
+    setHotelDomainResolveOutput({
+      tone: "warning",
+      title: "Hostname did not resolve.",
+      detail: error.message || "Tenant resolver check failed.",
+      lines: [
+        `Checked host: ${host}`
+      ]
+    });
+    renderHotelDomainLaunchChecklist();
+    renderHotelDeployValuesHelper("Deploy values refreshed. Resolve check still needs attention.");
+  }
 }
 
 function getHotelFilterValue() {
@@ -596,6 +1125,9 @@ function resetHotelForm() {
 
   if (idField) idField.value = "";
   if (activeField) activeField.checked = true;
+  state.hotelSavedLaunchReadiness = null;
+  resetHotelDomainResolveState();
+  renderHotelSavedLaunchReadiness();
 }
 
 function resetMenuItemForm() {
@@ -1371,6 +1903,13 @@ function bindEditActions() {
       document.getElementById("hotelPrimaryDomainInput").value = hotel.primary_domain || "";
       document.getElementById("hotelSubdomainInput").value = hotel.subdomain || "";
       document.getElementById("hotelIsActiveInput").checked = !!hotel.is_active;
+      resetHotelDomainResolveState({
+        host: hotel.primary_domain || "",
+        message: hotel.primary_domain
+          ? "Primary domain loaded. Run the hostname check when you want to verify routing."
+          : "Paste the exact hostname you want to test."
+      });
+      void loadHotelLaunchReadiness(hotel.id || "");
       scrollSectionIntoView("hotelFormSection");
     }
 
@@ -2940,6 +3479,90 @@ function bindQrTableLinkHelper() {
   });
 }
 
+function bindHotelDomainResolveHelper() {
+  const checkBtn = document.getElementById("checkHotelResolveBtn");
+  const usePrimaryBtn = document.getElementById("fillHotelResolveHostFromPrimaryBtn");
+  const refreshDeployValuesBtn = document.getElementById("refreshHotelDeployValuesBtn");
+  const copyDeployValuesBtn = document.getElementById("copyHotelDeployValuesBtn");
+  const refreshLaunchNotesBtn = document.getElementById("refreshHotelLaunchNotesBtn");
+  const copyLaunchNotesBtn = document.getElementById("copyHotelLaunchNotesBtn");
+  const hotelSlugInput = document.getElementById("hotelSlugInput");
+  const primaryDomainInput = document.getElementById("hotelPrimaryDomainInput");
+  const subdomainInput = document.getElementById("hotelSubdomainInput");
+  const resolveHostInput = document.getElementById("hotelDomainResolveHostInput");
+
+  if (checkBtn && checkBtn.dataset.boundClick !== "true") {
+    checkBtn.addEventListener("click", () => {
+      void checkHotelDomainResolve();
+    });
+    checkBtn.dataset.boundClick = "true";
+  }
+
+  if (usePrimaryBtn && usePrimaryBtn.dataset.boundClick !== "true") {
+    usePrimaryBtn.addEventListener("click", () => {
+      fillHotelResolveHostFromPrimaryDomain();
+    });
+    usePrimaryBtn.dataset.boundClick = "true";
+  }
+
+  if (refreshDeployValuesBtn && refreshDeployValuesBtn.dataset.boundClick !== "true") {
+    refreshDeployValuesBtn.addEventListener("click", () => {
+      renderHotelDeployValuesHelper("Deploy values refreshed from the current hotel form.");
+    });
+    refreshDeployValuesBtn.dataset.boundClick = "true";
+  }
+
+  if (copyDeployValuesBtn && copyDeployValuesBtn.dataset.boundClick !== "true") {
+    copyDeployValuesBtn.addEventListener("click", () => {
+      void copyHotelDeployValues();
+    });
+    copyDeployValuesBtn.dataset.boundClick = "true";
+  }
+
+  if (refreshLaunchNotesBtn && refreshLaunchNotesBtn.dataset.boundClick !== "true") {
+    refreshLaunchNotesBtn.addEventListener("click", () => {
+      renderHotelLaunchNotesHelper("Launch notes refreshed from the current hotel form.");
+    });
+    refreshLaunchNotesBtn.dataset.boundClick = "true";
+  }
+
+  if (copyLaunchNotesBtn && copyLaunchNotesBtn.dataset.boundClick !== "true") {
+    copyLaunchNotesBtn.addEventListener("click", () => {
+      void copyHotelLaunchNotes();
+    });
+    copyLaunchNotesBtn.dataset.boundClick = "true";
+  }
+
+  [hotelSlugInput, primaryDomainInput, subdomainInput, resolveHostInput]
+    .filter(Boolean)
+    .forEach((input) => {
+      if (input.dataset.boundHotelResolveChange === "true") return;
+      input.addEventListener("input", () => {
+        setHotelDomainResolveOutput({
+          tone: "neutral",
+          title: "Hostname inputs changed.",
+          detail: "Run the check again to verify the latest routing."
+        });
+        renderHotelDomainLaunchChecklist();
+        renderHotelDeployValuesHelper("Deploy values changed with the current hotel form.");
+      });
+      input.addEventListener("change", () => {
+        setHotelDomainResolveOutput({
+          tone: "neutral",
+          title: "Hostname inputs changed.",
+          detail: "Run the check again to verify the latest routing."
+        });
+        renderHotelDomainLaunchChecklist();
+        renderHotelDeployValuesHelper("Deploy values changed with the current hotel form.");
+      });
+      input.dataset.boundHotelResolveChange = "true";
+    });
+
+  renderHotelDomainLaunchChecklist();
+  renderHotelDeployValuesHelper();
+  renderHotelLaunchNotesHelper();
+}
+
 function bindGalleryUploadHelper() {
   const btn = document.getElementById("galleryUploadHelperBtn");
   if (!btn) return;
@@ -3109,10 +3732,25 @@ function bindHotelForm() {
       whatsappNumber: document.getElementById("hotelWhatsappInput")?.value.trim(),
       upiId: document.getElementById("hotelUpiInput")?.value.trim(),
       gstPercent: Number(document.getElementById("hotelGstInput")?.value || 5),
-      primaryDomain: document.getElementById("hotelPrimaryDomainInput")?.value.trim(),
-      subdomain: document.getElementById("hotelSubdomainInput")?.value.trim(),
+      primaryDomain: normalizeHotelPrimaryDomainInput(
+        document.getElementById("hotelPrimaryDomainInput")?.value
+      ),
+      subdomain: normalizeHotelSubdomainInput(
+        document.getElementById("hotelSubdomainInput")?.value
+      ),
       isActive: !!document.getElementById("hotelIsActiveInput")?.checked
     };
+
+    if (
+      payload.primaryDomain &&
+      (
+        !payload.primaryDomain.includes(".") ||
+        payload.primaryDomain === "localhost"
+      )
+    ) {
+      alert("Primary domain must look like example.com");
+      return;
+    }
 
     try {
       if (submitButton) {
@@ -5424,6 +6062,7 @@ async function initAdmin() {
     bindStatusActions();
     bindFormToggles();
     bindQrTableLinkHelper();
+    bindHotelDomainResolveHelper();
     bindGalleryUploadHelper();
     bindProfileAboutImageUploadHelpers();
     bindProfileHeroImageUploadHelper();

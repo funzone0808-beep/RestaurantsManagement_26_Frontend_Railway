@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="app-backend-base-url" content="https://restaurantsmanagement-26-backend.onrender.com" />
-  <meta name="app-api-base-url" content="https://restaurantsmanagement-26-backend.onrender.com/api" />
+  <meta name="app-backend-base-url" content="https://restaurantsmanagement26backend-production.up.railway.app" />
+  <meta name="app-api-base-url" content="https://restaurantsmanagement26backend-production.up.railway.app/api" />
 <meta name="app-allow-order-whatsapp-fallback-on-save-failure" content="false" />
 <meta name="app-open-whatsapp-after-verified-online-payment" content="true" />
 <meta name="app-contact-sheet-url" content="" />
@@ -810,6 +810,38 @@ body {
         <div class="admin-field">
           <label class="admin-field-label" for="hotelSubdomainInput">Subdomain</label>
           <input id="hotelSubdomainInput" name="subdomain" placeholder="sai-raj" />
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="hotelDomainResolveHostInput">Tenant Resolve Check</label>
+          <input
+            id="hotelDomainResolveHostInput"
+            name="domainResolveHost"
+            placeholder="hotel.example.com or sai-raj.platform.example"
+          />
+          <p class="admin-field-hint">Paste the exact hostname you plan to point. This checks the live tenant resolver before DNS cutover.</p>
+          <div class="status-row">
+            <button id="fillHotelResolveHostFromPrimaryBtn" class="status-btn" type="button">Use Primary Domain</button>
+            <button id="checkHotelResolveBtn" class="status-btn" type="button">Check Host</button>
+          </div>
+          <div id="hotelDomainResolveResult" class="admin-row" style="margin-top: 12px;">No hostname checked yet.</div>
+          <div id="hotelDomainLaunchChecklist" class="admin-row" style="margin-top: 12px;"></div>
+          <div id="hotelSavedLaunchReadiness" class="admin-row" style="margin-top: 12px;"></div>
+          <div class="admin-card" style="margin-top: 12px;">
+            <h3>Deploy Values</h3>
+            <input id="hotelDeployValuesOutput" readonly placeholder="Hotel deploy values will appear here" />
+            <div class="status-row">
+              <button id="refreshHotelDeployValuesBtn" class="status-btn" type="button">Refresh Values</button>
+              <button id="copyHotelDeployValuesBtn" class="status-btn" type="button">Copy Values</button>
+            </div>
+            <p id="hotelDeployValuesHelp" class="admin-field-hint">Keep this handy while updating DNS, tenant data, and deploy notes.</p>
+            <textarea id="hotelLaunchNotesOutput" rows="8" readonly placeholder="Launch notes will appear here" style="margin-top: 12px; width: 100%;"></textarea>
+            <div class="status-row">
+              <button id="refreshHotelLaunchNotesBtn" class="status-btn" type="button">Refresh Notes</button>
+              <button id="copyHotelLaunchNotesBtn" class="status-btn" type="button">Copy Launch Notes</button>
+            </div>
+            <p id="hotelLaunchNotesHelp" class="admin-field-hint">Use this for rollout handoff or deployment checklists.</p>
+          </div>
         </div>
 
         <label class="admin-checkbox">

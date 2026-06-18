@@ -38,6 +38,22 @@
     return url.replace(/\/+$/, "");
   }
 
+  function stripApiSuffix(value = "") {
+    return cleanText(value).replace(/\/api\/?$/i, "");
+  }
+
+  function ensureApiSuffix(value = "") {
+    const normalizedValue = cleanText(value);
+
+    if (!normalizedValue) {
+      return "";
+    }
+
+    return /\/api\/?$/i.test(normalizedValue)
+      ? normalizedValue.replace(/\/+$/, "")
+      : `${normalizedValue.replace(/\/+$/, "")}/api`;
+  }
+
   function cleanText(value, fallback = "") {
     return typeof value === "string" && value.trim()
       ? value.trim()
@@ -71,7 +87,7 @@
       return "";
     }
 
-    return normalizedUrl.replace(/\/api\/?$/i, "");
+    return stripApiSuffix(normalizedUrl);
   }
 
   const metaBackendBaseUrl = getMetaConfig("app-backend-base-url");
@@ -92,13 +108,23 @@
   const hasVerifiedPaymentWhatsAppMetaTag = hasMetaConfigTag(
     "app-open-whatsapp-after-verified-online-payment"
   );
-  const configuredApiBaseUrl = cleanText(
+  const rawConfiguredApiBaseUrl = cleanText(
     existingConfig.API_BASE_URL || metaApiBaseUrl
   );
+  const rawConfiguredBackendBaseUrl = cleanText(
+    existingConfig.BACKEND_BASE_URL || metaBackendBaseUrl
+  );
   const configuredBackendBaseUrl = cleanText(
-    existingConfig.BACKEND_BASE_URL ||
-      metaBackendBaseUrl ||
-      deriveBackendBaseUrl(configuredApiBaseUrl)
+    stripApiSuffix(rawConfiguredBackendBaseUrl) ||
+      deriveBackendBaseUrl(rawConfiguredApiBaseUrl)
+  );
+  const configuredApiBaseUrl = cleanText(
+    ensureApiSuffix(rawConfiguredApiBaseUrl) ||
+      (
+        configuredBackendBaseUrl
+          ? `${configuredBackendBaseUrl}/api`
+          : ""
+      )
   );
   const hasExplicitBackendBaseUrl = Boolean(configuredBackendBaseUrl);
   const hasExplicitApiBaseUrl = Boolean(configuredApiBaseUrl);
@@ -129,6 +155,13 @@
     ? `${invalidRuntimeConfigBasePath}/api`
     : cleanUrl(configuredApiBaseUrl, `${backendBaseUrl}/api`);
 
+  const normalizedApiMetaFixApplied =
+    !!rawConfiguredApiBaseUrl &&
+    rawConfiguredApiBaseUrl !== configuredApiBaseUrl;
+  const normalizedBackendMetaFixApplied =
+    !!rawConfiguredBackendBaseUrl &&
+    rawConfiguredBackendBaseUrl !== configuredBackendBaseUrl;
+
   if (hasMissingExplicitRuntimeConfig && typeof console !== "undefined") {
     console.error(
       "[app-config] Missing explicit runtime config on a non-local page. Configure <meta name=\"app-backend-base-url\"> and <meta name=\"app-api-base-url\"> or stamp them with the frontend runtime prepare script before sharing this page."
@@ -138,6 +171,18 @@
   if (!hasRuntimeMetaWiring && typeof console !== "undefined") {
     console.warn(
       "[app-config] Runtime config meta wiring is incomplete on this page. Add both <meta name=\"app-backend-base-url\"> and <meta name=\"app-api-base-url\"> to keep deployment wiring explicit."
+    );
+  }
+
+  if (normalizedApiMetaFixApplied && typeof console !== "undefined") {
+    console.warn(
+      `[app-config] Normalized app-api-base-url to "${configuredApiBaseUrl}". Production API base URLs should include the /api path.`
+    );
+  }
+
+  if (normalizedBackendMetaFixApplied && typeof console !== "undefined") {
+    console.warn(
+      `[app-config] Normalized app-backend-base-url to "${configuredBackendBaseUrl}". Backend base URLs should not include the /api path.`
     );
   }
 

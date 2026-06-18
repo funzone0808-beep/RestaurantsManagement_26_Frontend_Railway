@@ -49,6 +49,14 @@ function rememberHotelSlug(slug) {
   }
 }
 
+function clearStoredHotelSlug() {
+  try {
+    window.localStorage?.removeItem(HOTEL_SLUG_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in private browsing; query/domain routing still works.
+  }
+}
+
 function getConfiguredDefaultHotelSlug() {
   return normalizeHotelSlug(window.APP_RUNTIME_CONFIG?.DEFAULT_HOTEL_SLUG);
 }
@@ -1078,6 +1086,11 @@ async function loadAppData({
   includeTestimonials = true
 } = {}) {
   const hotelSlug = await resolveHotelSlug();
+  const host = window.location.hostname;
+  const localRuntime = isLocalhost(host);
+  const queryHotelSlug = normalizeHotelSlug(getHotelSlugFromQuery());
+  const configuredDefaultHotelSlug = getConfiguredDefaultHotelSlug();
+  const storedHotelSlug = getStoredHotelSlug();
 
   const galleryPromise = includeGallery
     ? fetchJson(`${PUBLIC_API_BASE}/gallery/${hotelSlug}`)
@@ -1100,10 +1113,36 @@ async function loadAppData({
         })
     : Promise.resolve([]);
 
-  const [hotelResult, menuResult] = await Promise.all([
-    fetchJsonWithRetry(`${PUBLIC_API_BASE}/hotel/${hotelSlug}`, STARTUP_FETCH_OPTIONS),
-    fetchJsonWithRetry(`${PUBLIC_API_BASE}/menu/${hotelSlug}`, STARTUP_FETCH_OPTIONS)
-  ]);
+  let hotelResult;
+  let menuResult;
+
+  try {
+    [hotelResult, menuResult] = await Promise.all([
+      fetchJsonWithRetry(`${PUBLIC_API_BASE}/hotel/${hotelSlug}`, STARTUP_FETCH_OPTIONS),
+      fetchJsonWithRetry(`${PUBLIC_API_BASE}/menu/${hotelSlug}`, STARTUP_FETCH_OPTIONS)
+    ]);
+  } catch (error) {
+    const shouldClearRememberedLocalSlug =
+      localRuntime &&
+      Number(error?.status || 0) === 404 &&
+      !queryHotelSlug &&
+      !configuredDefaultHotelSlug &&
+      storedHotelSlug &&
+      storedHotelSlug === hotelSlug;
+
+    if (shouldClearRememberedLocalSlug) {
+      clearStoredHotelSlug();
+      const staleSlugError = new Error(
+        `Local hotel slug "${hotelSlug}" was remembered from an earlier session, but your backend returned 404 for it. The saved local slug has been cleared. Reload with ?hotel=your-real-hotel-slug.`
+      );
+      staleSlugError.status = error.status;
+      staleSlugError.url = error.url;
+      staleSlugError.code = "STALE_LOCAL_HOTEL_SLUG";
+      throw staleSlugError;
+    }
+
+    throw error;
+  }
   const [gallery, testimonials] = await Promise.all([galleryPromise, testimonialsPromise]);
 
   const hotel = mapHotelProfileToFrontendShape(hotelResult.hotel);

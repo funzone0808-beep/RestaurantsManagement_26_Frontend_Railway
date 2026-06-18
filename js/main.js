@@ -7561,6 +7561,90 @@ function markAppReady() {
   document.dispatchEvent(new Event("app:ready"));
 }
 
+function isLocalAppRuntime(hostname = window.location.hostname) {
+  return (
+    !hostname ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname.endsWith(".localhost")
+  );
+}
+
+function buildLocalBootFailureBannerMessage(error) {
+  const message = String(error?.message || "").trim();
+
+  if (error?.code === "STALE_LOCAL_HOTEL_SLUG") {
+    return {
+      title: "Local hotel slug was stale.",
+      detail: message,
+      hint: "Reload this page with ?hotel=your-real-hotel-slug after your backend is running."
+    };
+  }
+
+  if (message.includes("Hotel slug is required")) {
+    return {
+      title: "Local hotel slug is missing.",
+      detail: message,
+      hint: "Open the page with ?hotel=your-real-hotel-slug, for example index.html?hotel=demo-hotel."
+    };
+  }
+
+  if (Number(error?.status || 0) === 404) {
+    return {
+      title: "Local hotel data was not found.",
+      detail: message || "The backend returned 404 for this hotel on localhost.",
+      hint: "Check that your backend has an active hotel/profile/menu for the slug you are using, or reload with ?hotel=your-real-hotel-slug."
+    };
+  }
+
+  return {
+    title: "Local app boot failed.",
+    detail: message || "The page could not load hotel data from your local backend.",
+    hint: "Check your localhost backend and reload with ?hotel=your-real-hotel-slug if needed."
+  };
+}
+
+function renderLocalBootFailureBanner(error) {
+  if (!isLocalAppRuntime()) {
+    return;
+  }
+
+  const bannerHost = document.getElementById("pageShell") || document.body;
+
+  if (!bannerHost) {
+    return;
+  }
+
+  const existingBanner = document.getElementById("localBootFailureBanner");
+  if (existingBanner) {
+    existingBanner.remove();
+  }
+
+  const message = buildLocalBootFailureBannerMessage(error);
+  const banner = document.createElement("section");
+
+  banner.id = "localBootFailureBanner";
+  banner.setAttribute("role", "alert");
+  banner.style.cssText = [
+    "margin: 24px auto 0",
+    "max-width: 960px",
+    "padding: 16px 18px",
+    "border: 1px solid rgba(232, 184, 103, 0.35)",
+    "border-radius: 8px",
+    "background: rgba(232, 184, 103, 0.14)",
+    "color: #ffe2a8",
+    "font-family: var(--font-body, sans-serif)",
+    "line-height: 1.5"
+  ].join(";");
+  banner.innerHTML = `
+    <strong style="display:block; margin-bottom: 6px;">${escapeHTML(message.title)}</strong>
+    <div>${escapeHTML(message.detail)}</div>
+    <div style="margin-top: 8px;">${escapeHTML(message.hint)}</div>
+  `;
+
+  bannerHost.prepend(banner);
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     const isMenuPage = document.body.classList.contains("menu-page");
@@ -7592,5 +7676,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (error) {
     console.error("App bootstrap failed:", error);
     markAppReady();
+    renderLocalBootFailureBanner(error);
   }
 });

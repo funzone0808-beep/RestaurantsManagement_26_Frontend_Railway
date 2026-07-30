@@ -24,6 +24,20 @@ const API_BASE = `${BASE_API}/admin`;
 const AUTH_API_BASE = `${BASE_API}/auth`;
 const UPLOAD_API_BASE = `${BASE_API}/admin/upload`;
 
+function isRoomCombinedCheckoutFrontendEnabled() {
+  return window.APP_RUNTIME_CONFIG?.ROOM_COMBINED_CHECKOUT_FRONTEND_ENABLED === true;
+}
+
+function getRoomCombinedCheckoutDisabledAttribute() {
+  return isRoomCombinedCheckoutFrontendEnabled() ? "" : "disabled";
+}
+
+function getRoomCombinedCheckoutHintText() {
+  return isRoomCombinedCheckoutFrontendEnabled()
+    ? "Combined checkout frontend is enabled for staging. Backend feature flag and RPC validation still control settlement."
+    : "Combined checkout stays disabled until the backend migration, staging verifier, and feature flag are enabled.";
+}
+
 const TAB_LABELS = {
   orders: "orders",
   reservations: "reservations",
@@ -31,8 +45,11 @@ const TAB_LABELS = {
   "contact-submissions": "contact messages",
   "notification-events": "notification events",
   hotels: "hotels",
+  rooms: "rooms",
   "gallery-items": "gallery items",
+  "popup-notifications": "popup notifications",
   "menu-items": "menu items",
+  "menu-combos": "combo offers",
   testimonials: "testimonials"
 };
 
@@ -49,6 +66,7 @@ if (uploadBtn) {
 }
 
 const ADMIN_TOKEN_KEY = "hotel_platform_admin_token";
+let adminTabLoadController = null;
 
 function getAdminToken() {
   return localStorage.getItem(ADMIN_TOKEN_KEY) || "";
@@ -72,7 +90,20 @@ const state = {
   notificationEvents: [],
   notificationEventMaxRetries: 3,
   galleryItems: [],
+  popupNotifications: [],
   menuItems: [],
+  menuCombos: [],
+  roomTypes: [],
+  rooms: [],
+  roomBookings: [],
+  roomCheckoutSummaries: {},
+  roomCheckoutBills: {},
+  roomBookingFilters: {
+    status: "",
+    fromDate: "",
+    toDate: "",
+    limit: "100"
+  },
   testimonials: [],
   menuItemSearchQuery: "",
   profileHeroBase: {},
@@ -1027,17 +1058,30 @@ async function fetchJson(url, options = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.message || "Request failed");
+    if (response.status === 401) {
+      clearAdminToken();
+      showLoginView();
+      throw new Error("Admin session expired or missing. Please log in again.");
+    }
+
+    const error = new Error(data.message || "Request failed");
+    error.status = response.status;
+    error.code = data.code || "";
+    error.responseData = data;
+    throw error;
   }
 
   return data;
 }
 
 function buildUrl(endpoint) {
+  const hotelSlug = getSelectedHotelSlug();
   const hotelName = getSelectedHotelName();
-  if (!hotelName) return `${API_BASE}/${endpoint}`;
+  if (!hotelSlug && !hotelName) return `${API_BASE}/${endpoint}`;
 
-  const params = new URLSearchParams({ hotelName });
+  const params = new URLSearchParams();
+  if (hotelSlug) params.set("hotelSlug", hotelSlug);
+  if (hotelName) params.set("hotelName", hotelName);
   return `${API_BASE}/${endpoint}?${params.toString()}`;
 }
 
@@ -1051,6 +1095,21 @@ function getFilteredHotels() {
 function syncMenuFormHotelSlug({ force = false } = {}) {
   const input = document.getElementById("menuHotelSlugInput");
   const idField = document.getElementById("menuItemDbId");
+  if (!input) return;
+
+  const isEditingExistingItem = !!idField?.value.trim();
+  if (isEditingExistingItem) return;
+
+  const hotelSlug = getSelectedHotelSlug();
+
+  if (force || !input.value.trim()) {
+    input.value = hotelSlug || "";
+  }
+}
+
+function syncMenuComboFormHotelSlug({ force = false } = {}) {
+  const input = document.getElementById("menuComboHotelSlugInput");
+  const idField = document.getElementById("menuComboDbId");
   if (!input) return;
 
   const isEditingExistingItem = !!idField?.value.trim();
@@ -1093,6 +1152,23 @@ function syncTestimonialFormHotelSlug({ force = false } = {}) {
   }
 }
 
+function syncPopupNotificationFormHotelSlug({ force = false } = {}) {
+  const input = document.getElementById("popupNotificationHotelSlugInput");
+  const idField = document.getElementById("popupNotificationDbId");
+  if (!input) return;
+
+  const isEditingExistingItem = !!idField?.value.trim();
+  if (isEditingExistingItem) return;
+
+  const hotelSlug = getSelectedHotelSlug();
+
+  if (force || !input.value.trim()) {
+    input.value = hotelSlug || "";
+  }
+
+  renderPopupNotificationPreview();
+}
+
 function syncNotificationSettingsHotelSlug({ force = false } = {}) {
   const input = document.getElementById("notificationSettingsHotelSlugInput");
   if (!input) return;
@@ -1104,8 +1180,63 @@ function syncNotificationSettingsHotelSlug({ force = false } = {}) {
   }
 }
 
+function syncOrderingSettingsHotelSlug({ force = false } = {}) {
+  const input = document.getElementById("orderingSettingsHotelSlugInput");
+  if (!input) return;
+
+  const hotelSlug = getSelectedHotelSlug();
+
+  if (force || !input.value.trim()) {
+    input.value = hotelSlug || "";
+  }
+}
+
+function syncRoomFeatureSettingsHotelSlug({ force = false } = {}) {
+  const input = document.getElementById("roomFeatureSettingsHotelSlugInput");
+  if (!input) return;
+
+  const hotelSlug = getSelectedHotelSlug();
+
+  if (force || !input.value.trim()) {
+    input.value = hotelSlug || "";
+  }
+}
+
 function syncPaymentRouteSettingsHotelSlug({ force = false } = {}) {
   const input = document.getElementById("paymentRouteHotelSlugInput");
+  if (!input) return;
+
+  const hotelSlug = getSelectedHotelSlug();
+
+  if (force || !input.value.trim()) {
+    input.value = hotelSlug || "";
+  }
+}
+
+function syncRoomTypeFormHotelSlug({ force = false } = {}) {
+  const input = document.getElementById("roomTypeHotelSlugInput");
+  if (!input) return;
+
+  const hotelSlug = getSelectedHotelSlug();
+
+  if (force || !input.value.trim()) {
+    input.value = hotelSlug || "";
+  }
+}
+
+function syncRoomFormHotelSlug({ force = false } = {}) {
+  const input = document.getElementById("roomHotelSlugInput");
+  if (!input) return;
+
+  const hotelSlug = getSelectedHotelSlug();
+
+  if (force || !input.value.trim()) {
+    input.value = hotelSlug || "";
+  }
+}
+
+function syncRoomBookingFormHotelSlug({ force = false } = {}) {
+  const input = document.getElementById("roomBookingHotelSlugInput");
   if (!input) return;
 
   const hotelSlug = getSelectedHotelSlug();
@@ -1144,6 +1275,193 @@ function resetMenuItemForm() {
   syncMenuFormHotelSlug({ force: true });
 }
 
+function resetMenuComboForm() {
+  const form = document.getElementById("menuComboForm");
+  if (!form) return;
+
+  form.reset();
+  const idField = document.getElementById("menuComboDbId");
+  const availableField = document.getElementById("menuComboIsAvailableInput");
+  const categoryField = document.getElementById("menuComboCategoryInput");
+
+  if (idField) idField.value = "";
+  if (availableField) availableField.checked = true;
+  if (categoryField) categoryField.value = "combos";
+
+  setMenuComboIdentityFieldsLocked(false);
+  syncMenuComboFormHotelSlug({ force: true });
+}
+
+function resetRoomTypeForm() {
+  const form = document.getElementById("roomTypeForm");
+  if (!form) return;
+
+  form.reset();
+  const activeField = document.getElementById("roomTypeIsActiveInput");
+  if (activeField) activeField.checked = true;
+
+  syncRoomTypeFormHotelSlug({ force: true });
+}
+
+function resetRoomForm() {
+  const form = document.getElementById("roomForm");
+  if (!form) return;
+
+  form.reset();
+  const activeField = document.getElementById("roomIsActiveInput");
+  const statusField = document.getElementById("roomStatusInput");
+  if (activeField) activeField.checked = true;
+  if (statusField) statusField.value = "available";
+
+  syncRoomFormHotelSlug({ force: true });
+}
+
+function resetRoomBookingForm() {
+  const form = document.getElementById("roomBookingForm");
+  if (!form) return;
+
+  form.reset();
+  const adultsField = document.getElementById("roomBookingAdultsInput");
+  const childrenField = document.getElementById("roomBookingChildrenInput");
+  const sourceField = document.getElementById("roomBookingSourceInput");
+  const statusField = document.getElementById("roomBookingStatusInput");
+  const paymentMethodField = document.getElementById("roomBookingPaymentMethodInput");
+  const advanceOptionField = document.getElementById("roomBookingAdvanceOptionInput");
+
+  if (adultsField) adultsField.value = "1";
+  if (childrenField) childrenField.value = "0";
+  if (sourceField) sourceField.value = "admin";
+  if (statusField) statusField.value = "confirmed";
+  if (paymentMethodField) paymentMethodField.value = "";
+  if (advanceOptionField) advanceOptionField.value = "no_advance";
+  syncAdminRoomAdvanceFields();
+
+  syncRoomBookingFormHotelSlug({ force: true });
+  populateRoomBookingRoomOptions();
+}
+
+function formatTimeInputValue(value = "") {
+  const candidate = String(value || "").trim();
+
+  if (!candidate) {
+    return "";
+  }
+
+  const timeMatch = candidate.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  return timeMatch ? timeMatch[1] : "";
+}
+
+function parseMenuComboChildItemsInput(rawValue = "") {
+  return String(rawValue || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [childItemIdPart = "", quantityPart = "", sortOrderPart = ""] = line
+        .split("|")
+        .map((part) => String(part || "").trim());
+
+      return {
+        childItemId: childItemIdPart,
+        quantity: quantityPart ? Number(quantityPart) : 1,
+        sortOrder: sortOrderPart ? Number(sortOrderPart) : 0
+      };
+    });
+}
+
+function parseRoomListInput(rawValue = "") {
+  const seen = new Set();
+
+  return String(rawValue || "")
+    .split(/\r?\n|,/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .reduce((items, entry) => {
+      if (items.length >= 100) return items;
+
+      const candidate = entry.slice(0, 500);
+      const key = candidate.toLowerCase();
+      if (seen.has(key)) return items;
+
+      seen.add(key);
+      items.push(candidate);
+      return items;
+    }, []);
+}
+
+function getOptionalNumericInput(id, { integer = false, min = 0, max = 99999999.99 } = {}) {
+  const rawValue = document.getElementById(id)?.value.trim() || "";
+  if (!rawValue) return undefined;
+
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error("Enter valid room pricing, capacity, and guest numbers.");
+  }
+
+  if (integer && !Number.isInteger(value)) {
+    throw new Error("Room capacity and guest counts must be whole numbers.");
+  }
+
+  return value;
+}
+
+function serializeMenuComboChildItems(childItems = []) {
+  return (Array.isArray(childItems) ? childItems : [])
+    .map((childItem) => {
+      const childItemId = String(childItem?.childItemId || "").trim();
+
+      if (!childItemId) {
+        return "";
+      }
+
+      const quantity = Number(childItem?.quantity || 1);
+      const sortOrder = Number(childItem?.sortOrder || 0);
+      return `${childItemId}|${quantity}|${sortOrder}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function setMenuComboIdentityFieldsLocked(isLocked) {
+  const hotelSlugInput = document.getElementById("menuComboHotelSlugInput");
+  const itemIdInput = document.getElementById("menuComboItemIdInput");
+
+  [hotelSlugInput, itemIdInput].forEach((input) => {
+    if (!input) return;
+    input.readOnly = !!isLocked;
+  });
+}
+
+function fillMenuComboForm(combo = {}) {
+  document.getElementById("menuComboDbId").value = combo.id || "";
+  document.getElementById("menuComboHotelSlugInput").value =
+    combo.hotelSlug || combo.hotel_slug || "";
+  document.getElementById("menuComboCategoryInput").value = combo.category || "combos";
+  document.getElementById("menuComboItemIdInput").value = combo.itemId || combo.item_id || "";
+  document.getElementById("menuComboNameInput").value = combo.name || "";
+  document.getElementById("menuComboDescriptionInput").value = combo.description || "";
+  document.getElementById("menuComboPriceInput").value = combo.price ?? 0;
+  document.getElementById("menuComboImageInput").value = combo.image || "";
+  document.getElementById("menuComboStoragePathInput").value = combo.storagePath || "";
+  document.getElementById("menuComboAltInput").value = combo.alt || "";
+  document.getElementById("menuComboBadgeInput").value = combo.badge || "";
+  document.getElementById("menuComboTagInput").value = combo.tag || "";
+  document.getElementById("menuComboSortOrderInput").value = combo.sortOrder ?? 0;
+  document.getElementById("menuComboStartDateInput").value = combo.startDate || "";
+  document.getElementById("menuComboEndDateInput").value = combo.endDate || "";
+  document.getElementById("menuComboStartTimeInput").value = formatTimeInputValue(
+    combo.startTime || ""
+  );
+  document.getElementById("menuComboEndTimeInput").value = formatTimeInputValue(
+    combo.endTime || ""
+  );
+  document.getElementById("menuComboChildItemsInput").value = serializeMenuComboChildItems(
+    combo.childItems || []
+  );
+  document.getElementById("menuComboIsAvailableInput").checked = combo.isAvailable !== false;
+  setMenuComboIdentityFieldsLocked(true);
+}
+
 function resetGalleryItemForm() {
   const form = document.getElementById("galleryItemForm");
   if (!form) return;
@@ -1178,6 +1496,296 @@ function resetTestimonialForm() {
   syncTestimonialFormHotelSlug({ force: true });
 }
 
+function formatDateTimeLocalInputValue(value = "") {
+  const candidate = String(value || "").trim();
+
+  if (!candidate) {
+    return "";
+  }
+
+  const parsedDate = new Date(candidate);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return "";
+  }
+
+  const year = parsedDate.getFullYear();
+  const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
+  const day = String(parsedDate.getDate()).padStart(2, "0");
+  const hours = String(parsedDate.getHours()).padStart(2, "0");
+  const minutes = String(parsedDate.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function fillPopupNotificationForm(notification = {}) {
+  document.getElementById("popupNotificationDbId").value = notification.id || "";
+  document.getElementById("popupNotificationHotelSlugInput").value =
+    notification.hotel_slug || notification.hotelSlug || "";
+  document.getElementById("popupNotificationTitleInput").value =
+    notification.title || "";
+  document.getElementById("popupNotificationDescriptionInput").value =
+    notification.description || "";
+  document.getElementById("popupNotificationImageUrlInput").value =
+    notification.image_url || notification.imageUrl || "";
+  document.getElementById("popupNotificationStoragePathInput").value =
+    notification.storage_path || notification.storagePath || "";
+  document.getElementById("popupNotificationCtaTextInput").value =
+    notification.cta_text || notification.ctaText || "";
+  document.getElementById("popupNotificationCtaLinkInput").value =
+    notification.cta_link || notification.ctaLink || "";
+  document.getElementById("popupNotificationDisplayModeInput").value =
+    notification.display_mode || notification.displayMode || "once_per_session";
+  document.getElementById("popupNotificationPriorityInput").value =
+    notification.priority ?? 0;
+  document.getElementById("popupNotificationStartAtInput").value =
+    formatDateTimeLocalInputValue(notification.start_at || notification.startAt || "");
+  document.getElementById("popupNotificationEndAtInput").value =
+    formatDateTimeLocalInputValue(notification.end_at || notification.endAt || "");
+  document.getElementById("popupNotificationIsActiveInput").checked =
+    notification.is_active !== false;
+  renderPopupNotificationPreview();
+}
+
+function resetPopupNotificationForm() {
+  const form = document.getElementById("popupNotificationForm");
+  if (!form) return;
+
+  form.reset();
+  document.getElementById("popupNotificationDbId").value = "";
+  document.getElementById("popupNotificationDisplayModeInput").value = "once_per_session";
+  document.getElementById("popupNotificationPriorityInput").value = "0";
+  document.getElementById("popupNotificationIsActiveInput").checked = true;
+  syncPopupNotificationFormHotelSlug({ force: true });
+  renderPopupNotificationPreview();
+}
+
+function formatPopupDisplayModeLabel(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (normalized === "every_visit") return "every visit";
+  if (normalized === "once_per_day") return "once per day";
+  return "once per session";
+}
+
+function renderPopupNotificationPreview() {
+  const titleEl = document.getElementById("popupNotificationPreviewTitle");
+  const descriptionEl = document.getElementById("popupNotificationPreviewDescription");
+  const imageWrapEl = document.getElementById("popupNotificationPreviewImageWrap");
+  const imageEl = document.getElementById("popupNotificationPreviewImage");
+  const ctaEl = document.getElementById("popupNotificationPreviewCta");
+  const dismissOptionEl = document.getElementById("popupNotificationPreviewDismissOption");
+  const hotelSlugChipEl = document.getElementById("popupPreviewHotelSlugChip");
+  const displayModeChipEl = document.getElementById("popupPreviewDisplayModeChip");
+  const priorityChipEl = document.getElementById("popupPreviewPriorityChip");
+  const statusChipEl = document.getElementById("popupPreviewStatusChip");
+
+  if (
+    !titleEl ||
+    !descriptionEl ||
+    !imageWrapEl ||
+    !imageEl ||
+    !ctaEl ||
+    !dismissOptionEl ||
+    !hotelSlugChipEl ||
+    !displayModeChipEl ||
+    !priorityChipEl ||
+    !statusChipEl
+  ) {
+    return;
+  }
+
+  const hotelSlug =
+    document.getElementById("popupNotificationHotelSlugInput")?.value.trim() || "";
+  const title =
+    document.getElementById("popupNotificationTitleInput")?.value.trim() || "Festival Offer";
+  const description =
+    document.getElementById("popupNotificationDescriptionInput")?.value.trim() ||
+    "Your popup preview updates live as you type so you can check title length, spacing, image fit, and CTA copy before saving.";
+  const imageUrl =
+    document.getElementById("popupNotificationImageUrlInput")?.value.trim() || "";
+  const ctaText =
+    document.getElementById("popupNotificationCtaTextInput")?.value.trim() || "";
+  const ctaLink =
+    document.getElementById("popupNotificationCtaLinkInput")?.value.trim() || "";
+  const displayMode =
+    document.getElementById("popupNotificationDisplayModeInput")?.value.trim() ||
+    "once_per_session";
+  const priority = Number(
+    document.getElementById("popupNotificationPriorityInput")?.value || 0
+  );
+  const isActive = !!document.getElementById("popupNotificationIsActiveInput")?.checked;
+
+  titleEl.textContent = title;
+  descriptionEl.textContent = description;
+
+  if (imageUrl) {
+    imageEl.src = imageUrl;
+    imageEl.alt = title;
+    imageWrapEl.hidden = false;
+  } else {
+    imageEl.removeAttribute("src");
+    imageEl.alt = "";
+    imageWrapEl.hidden = true;
+  }
+
+  if (ctaText && ctaLink) {
+    ctaEl.hidden = false;
+    ctaEl.textContent = ctaText;
+    ctaEl.setAttribute("href", ctaLink);
+  } else {
+    ctaEl.hidden = true;
+    ctaEl.textContent = "";
+    ctaEl.setAttribute("href", "#");
+  }
+
+  dismissOptionEl.hidden = String(displayMode).trim().toLowerCase() === "once_per_day";
+  hotelSlugChipEl.textContent = `Hotel: ${hotelSlug || "not set"}`;
+  displayModeChipEl.textContent = `Mode: ${formatPopupDisplayModeLabel(displayMode)}`;
+  priorityChipEl.textContent = `Priority: ${Number.isFinite(priority) ? priority : 0}`;
+  statusChipEl.textContent = isActive ? "Active" : "Inactive";
+}
+
+function bindPopupNotificationPreview() {
+  const form = document.getElementById("popupNotificationForm");
+  if (!form || form.dataset.boundPopupPreview === "true") return;
+
+  form.addEventListener("input", () => {
+    renderPopupNotificationPreview();
+  });
+
+  form.addEventListener("change", () => {
+    renderPopupNotificationPreview();
+  });
+
+  form.dataset.boundPopupPreview = "true";
+  renderPopupNotificationPreview();
+}
+
+function isValidPopupNotificationCtaLink(value = "") {
+  const candidate = String(value || "").trim();
+
+  if (!candidate) {
+    return true;
+  }
+
+  if (candidate.startsWith("/")) {
+    return true;
+  }
+
+  try {
+    const parsedUrl = new URL(candidate);
+    return parsedUrl.protocol === "https:" || parsedUrl.protocol === "http:";
+  } catch (error) {
+    return false;
+  }
+}
+
+function validatePopupNotificationForm(form) {
+  if (!form) {
+    return false;
+  }
+
+  const hotelSlugInput = document.getElementById("popupNotificationHotelSlugInput");
+  const titleInput = document.getElementById("popupNotificationTitleInput");
+  const ctaTextInput = document.getElementById("popupNotificationCtaTextInput");
+  const ctaLinkInput = document.getElementById("popupNotificationCtaLinkInput");
+  const startAtInput = document.getElementById("popupNotificationStartAtInput");
+  const endAtInput = document.getElementById("popupNotificationEndAtInput");
+  const priorityInput = document.getElementById("popupNotificationPriorityInput");
+
+  [
+    hotelSlugInput,
+    titleInput,
+    ctaTextInput,
+    ctaLinkInput,
+    startAtInput,
+    endAtInput,
+    priorityInput
+  ]
+    .filter(Boolean)
+    .forEach((input) => input.setCustomValidity(""));
+
+  if (!form.reportValidity()) {
+    return false;
+  }
+
+  let firstInvalidInput = null;
+  const ctaText = ctaTextInput?.value.trim() || "";
+  const ctaLink = ctaLinkInput?.value.trim() || "";
+  const startAt = startAtInput?.value.trim() || "";
+  const endAt = endAtInput?.value.trim() || "";
+  const priorityValue = priorityInput?.value.trim() || "0";
+  const priorityNumber = Number(priorityValue);
+
+  if (ctaText && !ctaLink && ctaLinkInput) {
+    ctaLinkInput.setCustomValidity("Add a button link when button text is filled.");
+    firstInvalidInput = firstInvalidInput || ctaLinkInput;
+  }
+
+  if (ctaLink && !ctaText && ctaTextInput) {
+    ctaTextInput.setCustomValidity("Add button text when a button link is filled.");
+    firstInvalidInput = firstInvalidInput || ctaTextInput;
+  }
+
+  if (ctaLink && !isValidPopupNotificationCtaLink(ctaLink) && ctaLinkInput) {
+    ctaLinkInput.setCustomValidity("Button link must be an http(s) URL or start with /.");
+    firstInvalidInput = firstInvalidInput || ctaLinkInput;
+  }
+
+  if (startAt && endAt) {
+    const startTime = new Date(startAt).getTime();
+    const endTime = new Date(endAt).getTime();
+
+    if (Number.isFinite(startTime) && Number.isFinite(endTime) && endTime < startTime && endAtInput) {
+      endAtInput.setCustomValidity("End date/time must be after the start date/time.");
+      firstInvalidInput = firstInvalidInput || endAtInput;
+    }
+  }
+
+  if (
+    priorityInput &&
+    (!Number.isFinite(priorityNumber) || !Number.isInteger(priorityNumber) || priorityNumber < 0)
+  ) {
+    priorityInput.setCustomValidity("Priority must be a whole number zero or greater.");
+    firstInvalidInput = firstInvalidInput || priorityInput;
+  }
+
+  if (firstInvalidInput) {
+    firstInvalidInput.reportValidity();
+    firstInvalidInput.focus();
+    return false;
+  }
+
+  return true;
+}
+
+function bindPopupNotificationValidation() {
+  const form = document.getElementById("popupNotificationForm");
+  if (!form || form.dataset.boundPopupValidation === "true") return;
+
+  [
+    "popupNotificationCtaTextInput",
+    "popupNotificationCtaLinkInput",
+    "popupNotificationStartAtInput",
+    "popupNotificationEndAtInput",
+    "popupNotificationPriorityInput"
+  ].forEach((id) => {
+    const input = document.getElementById(id);
+    if (!input || input.dataset.boundPopupValidationInput === "true") return;
+
+    const clearValidity = () => {
+      input.setCustomValidity("");
+    };
+
+    input.addEventListener("input", clearValidity);
+    input.addEventListener("change", clearValidity);
+    input.dataset.boundPopupValidationInput = "true";
+  });
+
+  form.dataset.boundPopupValidation = "true";
+}
+
 function fillNotificationSettingsForm(settings = {}) {
   document.getElementById("notificationSettingsHotelSlugInput").value =
     settings.hotelSlug || "";
@@ -1201,6 +1809,185 @@ function resetNotificationSettingsForm() {
     notifyOnNewOrder: true,
     notifyOnNewReservation: true,
     notifyOnNewInquiry: true
+  });
+}
+
+function fillOrderingSettingsForm(settings = {}) {
+  const help = document.getElementById("orderingSettingsHelp");
+
+  document.getElementById("orderingSettingsHotelSlugInput").value =
+    settings.hotelSlug || "";
+  document.getElementById("orderingCustomerEnabledInput").checked =
+    settings.customerOrderingEnabled !== false;
+  document.getElementById("orderingStaffEnabledInput").checked =
+    settings.staffOrderingEnabled !== false;
+  document.getElementById("orderingWhatsappEnabledInput").checked =
+    settings.whatsappOrderingEnabled !== false;
+  document.getElementById("orderingSecureOnlinePaymentEnabledInput").checked =
+    settings.secureOnlinePaymentEnabled !== false;
+  document.getElementById("orderingCashOnDeliveryEnabledInput").checked =
+    settings.cashOnDeliveryEnabled !== false;
+  document.getElementById("orderingManualUpiPaymentEnabledInput").checked =
+    settings.manualUpiPaymentEnabled !== false;
+  document.getElementById("orderingDisabledTitleInput").value =
+    settings.disabledTitle || "";
+  document.getElementById("orderingDisabledMessageInput").value =
+    settings.disabledMessage || "";
+  document.getElementById("orderingDisabledButtonTextInput").value =
+    settings.disabledButtonText || "";
+  document.getElementById("orderingDisabledButtonLinkInput").value =
+    settings.disabledButtonLink || "";
+  document.getElementById("orderingDisabledIconInput").value =
+    settings.disabledIcon || "";
+
+  if (help) {
+    help.textContent =
+      "Ordering settings loaded. Public menu browsing stays live; customer ordering follows these saved flags.";
+  }
+}
+
+function resetOrderingSettingsForm() {
+  fillOrderingSettingsForm({
+    hotelSlug: "",
+    customerOrderingEnabled: true,
+    staffOrderingEnabled: true,
+    whatsappOrderingEnabled: true,
+    secureOnlinePaymentEnabled: true,
+    cashOnDeliveryEnabled: true,
+    manualUpiPaymentEnabled: true,
+    disabledTitle: "",
+    disabledMessage: "",
+    disabledButtonText: "",
+    disabledButtonLink: "",
+    disabledIcon: ""
+  });
+}
+
+let loadedHotelFeatureSettings = null;
+
+function getHotelFeatureBusinessType(settings = {}) {
+  if (settings.enableFoodModule !== false && settings.enableRoomModule === true) {
+    return "hotel_restaurant";
+  }
+  if (settings.enableRoomModule === true) return "hotel_only";
+  return "restaurant_only";
+}
+
+function syncHotelFeatureDependencies({ fromBusinessType = false } = {}) {
+  const businessTypeInput = document.getElementById("hotelBusinessTypeInput");
+  const foodModuleInput = document.getElementById("hotelFeatureFoodModuleEnabledInput");
+  const roomModuleInput = document.getElementById("hotelFeatureRoomModuleEnabledInput");
+  const foodOrderingInput = document.getElementById("roomFeatureFoodOrderingEnabledInput");
+  const roomBookingInput = document.getElementById("roomFeatureRoomBookingEnabledInput");
+  const roomServiceInput = document.getElementById("roomFeatureRoomServiceEnabledInput");
+  const foodReportsInput = document.getElementById("hotelFeatureFoodReportsEnabledInput");
+  const roomReportsInput = document.getElementById("hotelFeatureRoomReportsEnabledInput");
+  const combinedReportsInput = document.getElementById("hotelFeatureCombinedReportsEnabledInput");
+  const combinedBillingInput = document.getElementById("hotelFeatureCombinedBillingEnabledInput");
+  const help = document.getElementById("roomFeatureDependencyHelp");
+
+  if (fromBusinessType && businessTypeInput) {
+    const businessType = businessTypeInput.value;
+    if (foodModuleInput) foodModuleInput.checked = businessType !== "hotel_only";
+    if (roomModuleInput) roomModuleInput.checked = businessType !== "restaurant_only";
+    if (foodOrderingInput) foodOrderingInput.checked = businessType !== "hotel_only";
+    if (foodReportsInput) foodReportsInput.checked = businessType !== "hotel_only";
+    if (roomBookingInput) roomBookingInput.checked = businessType !== "restaurant_only";
+    if (roomReportsInput) roomReportsInput.checked = businessType !== "restaurant_only";
+    if (combinedReportsInput) combinedReportsInput.checked = businessType === "hotel_restaurant";
+  }
+
+  const foodEnabled = foodModuleInput?.checked === true;
+  const roomsEnabled = roomModuleInput?.checked === true;
+  const combinedEnabled = foodEnabled && roomsEnabled;
+
+  if (businessTypeInput && !fromBusinessType) {
+    businessTypeInput.value = getHotelFeatureBusinessType({
+      enableFoodModule: foodEnabled,
+      enableRoomModule: roomsEnabled
+    });
+  }
+
+  [foodOrderingInput, foodReportsInput].forEach((input) => {
+    if (!input) return;
+    input.disabled = !foodEnabled;
+    if (!foodEnabled) input.checked = false;
+  });
+  [roomBookingInput, roomReportsInput].forEach((input) => {
+    if (!input) return;
+    input.disabled = !roomsEnabled;
+    if (!roomsEnabled) input.checked = false;
+  });
+
+  if (roomServiceInput) {
+    roomServiceInput.disabled = !combinedEnabled;
+    if (!combinedEnabled) roomServiceInput.checked = false;
+  }
+  if (combinedReportsInput) {
+    combinedReportsInput.disabled = !combinedEnabled;
+    if (!combinedEnabled) combinedReportsInput.checked = false;
+  }
+  if (combinedBillingInput) {
+    combinedBillingInput.disabled = !combinedEnabled || roomServiceInput?.checked !== true;
+    if (combinedBillingInput.disabled) combinedBillingInput.checked = false;
+  }
+
+  if (help) {
+    help.textContent = combinedEnabled
+      ? "Both modules are enabled. Room Service and Combined Reports may be enabled; Combined Billing also requires Room Service."
+      : foodEnabled
+        ? "Restaurant-only: all Room Operations, Room Reports, Room Service, and combined features will be blocked."
+        : "Hotel-only: all Food Operations, ordering, KDS, Food Reports, Room Service, and combined features will be blocked.";
+  }
+}
+
+function fillRoomFeatureSettingsForm(settings = {}) {
+  const help = document.getElementById("roomFeatureSettingsHelp");
+
+  document.getElementById("roomFeatureSettingsHotelSlugInput").value =
+    settings.hotelSlug || "";
+  document.getElementById("hotelBusinessTypeInput").value =
+    settings.businessType || getHotelFeatureBusinessType(settings);
+  document.getElementById("hotelFeatureFoodModuleEnabledInput").checked =
+    settings.enableFoodModule !== false;
+  document.getElementById("hotelFeatureRoomModuleEnabledInput").checked =
+    !!settings.enableRoomModule;
+  document.getElementById("roomFeatureFoodOrderingEnabledInput").checked =
+    settings.enableFoodOrdering !== false;
+  document.getElementById("roomFeatureRoomBookingEnabledInput").checked =
+    !!settings.enableRoomBooking;
+  document.getElementById("roomFeatureRoomServiceEnabledInput").checked =
+    !!settings.enableRoomService;
+  document.getElementById("hotelFeatureFoodReportsEnabledInput").checked =
+    settings.enableFoodReports !== false;
+  document.getElementById("hotelFeatureRoomReportsEnabledInput").checked =
+    !!settings.enableRoomReports;
+  document.getElementById("hotelFeatureCombinedReportsEnabledInput").checked =
+    !!settings.enableCombinedReports;
+  document.getElementById("hotelFeatureCombinedBillingEnabledInput").checked =
+    !!settings.enableCombinedBilling;
+
+  syncHotelFeatureDependencies();
+  loadedHotelFeatureSettings = settings.hotelSlug ? { ...settings } : null;
+
+  if (help) {
+    help.textContent =
+      `Hotel module settings loaded${settings.version ? ` (version ${settings.version})` : ""}. Backend guards and staff visibility use this same configuration.`;
+  }
+}
+
+function resetRoomFeatureSettingsForm() {
+  fillRoomFeatureSettingsForm({
+    hotelSlug: "",
+    enableFoodModule: true,
+    enableRoomModule: false,
+    enableFoodOrdering: true,
+    enableRoomBooking: false,
+    enableRoomService: false,
+    enableFoodReports: true,
+    enableRoomReports: false,
+    enableCombinedReports: false,
+    enableCombinedBilling: false
   });
 }
 
@@ -1256,28 +2043,39 @@ async function loadHotels() {
 }
 
 async function loadTabData() {
+  if (adminTabLoadController) {
+    adminTabLoadController.abort();
+  }
+
+  const loadController = new AbortController();
+  adminTabLoadController = loadController;
+  const fetchTabJson = (url) =>
+    fetchJson(url, { signal: loadController.signal });
   const content = $("#adminContent");
+  content?.setAttribute("aria-busy", "true");
+
+  try {
   renderAdminScopeSummary();
   if (content) {
     content.innerHTML = `<p class="loading-state">Loading ${escapeHTML(getLoadingLabel())}...</p>`;
   }
 
   if (state.activeTab === "orders") {
-    const result = await fetchJson(buildUrl("orders"));
+    const result = await fetchTabJson(buildUrl("orders"));
     state.orders = result.orders || [];
     renderOrders();
     return;
   }
 
   if (state.activeTab === "reservations") {
-    const result = await fetchJson(buildUrl("reservations"));
+    const result = await fetchTabJson(buildUrl("reservations"));
     state.reservations = result.reservations || [];
     renderReservations();
     return;
   }
 
   if (state.activeTab === "inquiries") {
-    const result = await fetchJson(buildUrl("inquiries"));
+    const result = await fetchTabJson(buildUrl("inquiries"));
     state.inquiries = result.inquiries || [];
     renderInquiries();
     return;
@@ -1285,7 +2083,7 @@ async function loadTabData() {
 
   if (state.activeTab === "contact-submissions") {
     const hotelSlug = getSelectedHotelSlug();
-    const result = await fetchJson(
+    const result = await fetchTabJson(
       hotelSlug
         ? `${API_BASE}/contact-submissions?hotelSlug=${encodeURIComponent(hotelSlug)}`
         : `${API_BASE}/contact-submissions`
@@ -1297,7 +2095,7 @@ async function loadTabData() {
 
   if (state.activeTab === "notification-events") {
     const hotelSlug = getSelectedHotelSlug();
-    const result = await fetchJson(
+    const result = await fetchTabJson(
       hotelSlug
         ? `${API_BASE}/notification-events?hotelSlug=${encodeURIComponent(hotelSlug)}`
         : `${API_BASE}/notification-events`
@@ -1319,9 +2117,28 @@ async function loadTabData() {
     return;
   }
 
+  if (state.activeTab === "rooms") {
+    const hotelSlug = getSelectedHotelSlug();
+    const queryString = hotelSlug
+      ? `?hotelSlug=${encodeURIComponent(hotelSlug)}`
+      : "";
+    const bookingQueryString = buildRoomBookingAdminQueryString(hotelSlug);
+    const [roomTypesResult, roomsResult, bookingsResult] = await Promise.all([
+      fetchTabJson(`${API_BASE}/room-booking/room-types${queryString}`),
+      fetchTabJson(`${API_BASE}/room-booking/rooms${queryString}`),
+      fetchTabJson(`${API_BASE}/room-booking/bookings${bookingQueryString}`)
+    ]);
+
+    state.roomTypes = roomTypesResult.roomTypes || [];
+    state.rooms = roomsResult.rooms || [];
+    state.roomBookings = bookingsResult.bookings || [];
+    renderRoomsAdminList();
+    return;
+  }
+
   if (state.activeTab === "menu-items") {
     const hotelSlug = getSelectedHotelSlug();
-    const result = await fetchJson(
+    const result = await fetchTabJson(
       hotelSlug
         ? `${API_BASE}/menu-items?hotelSlug=${encodeURIComponent(hotelSlug)}`
         : `${API_BASE}/menu-items`
@@ -1332,9 +2149,22 @@ async function loadTabData() {
     return;
   }
 
+  if (state.activeTab === "menu-combos") {
+    const hotelSlug = getSelectedHotelSlug();
+    const result = await fetchTabJson(
+      hotelSlug
+        ? `${API_BASE}/menu-combos?hotelSlug=${encodeURIComponent(hotelSlug)}`
+        : `${API_BASE}/menu-combos`
+    );
+
+    state.menuCombos = result.menuCombos || [];
+    renderMenuCombos();
+    return;
+  }
+
   if (state.activeTab === "gallery-items") {
     const hotelSlug = getSelectedHotelSlug();
-    const result = await fetchJson(
+    const result = await fetchTabJson(
       hotelSlug
         ? `${API_BASE}/gallery-items?hotelSlug=${encodeURIComponent(hotelSlug)}`
         : `${API_BASE}/gallery-items`
@@ -1345,9 +2175,22 @@ async function loadTabData() {
     return;
   }
 
+  if (state.activeTab === "popup-notifications") {
+    const hotelSlug = getSelectedHotelSlug();
+    const result = await fetchTabJson(
+      hotelSlug
+        ? `${API_BASE}/popup-notifications?hotelSlug=${encodeURIComponent(hotelSlug)}`
+        : `${API_BASE}/popup-notifications`
+    );
+
+    state.popupNotifications = result.popupNotifications || [];
+    renderPopupNotifications();
+    return;
+  }
+
   if (state.activeTab === "testimonials") {
     const hotelSlug = getSelectedHotelSlug();
-    const result = await fetchJson(
+    const result = await fetchTabJson(
       hotelSlug
         ? `${API_BASE}/testimonials?hotelSlug=${encodeURIComponent(hotelSlug)}`
         : `${API_BASE}/testimonials`
@@ -1361,8 +2204,16 @@ async function loadTabData() {
   if (content) {
     content.innerHTML = `<p class="empty-state">Select a valid dashboard section.</p>`;
   }
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    throw error;
+  } finally {
+    if (adminTabLoadController === loadController) {
+      adminTabLoadController = null;
+      content?.setAttribute("aria-busy", "false");
+    }
+  }
 }
-
 function renderMenuItems() {
   const content = $("#adminContent");
   if (!content) return;
@@ -1478,6 +2329,110 @@ function renderMenuItems() {
   `;
 }
 
+function renderMenuCombos() {
+  const content = $("#adminContent");
+  if (!content) return;
+
+  if (!state.menuCombos.length) {
+    content.innerHTML = `
+      ${buildAdminListSummaryCard({
+        title: "Combo Offers",
+        count: 0,
+        description: "Browse combo offers for the current hotel scope."
+      })}
+      <p class="empty-state">No combo offers found.</p>
+    `;
+    return;
+  }
+
+  content.innerHTML = `
+    ${buildAdminListSummaryCard({
+      title: "Combo Offers",
+      count: state.menuCombos.length,
+      description: "Browse combo offers for the current hotel scope."
+    })}
+    <div class="admin-grid">
+      ${state.menuCombos
+        .map((item) => {
+          const childItems = Array.isArray(item.childItems) ? item.childItems : [];
+          const childItemSummary = childItems.length
+            ? childItems
+                .map((childItem) => {
+                  const childName = String(childItem.childName || childItem.childItemId || "").trim();
+                  const quantity = Number(childItem.quantity || 1);
+                  return `${quantity}x ${childName}`;
+                })
+                .join(", ")
+            : "No child items saved";
+          const availabilityWindow = [
+            item.startDate || "",
+            item.startTime || "",
+            item.endDate ? "to" : "",
+            item.endDate || "",
+            item.endTime || ""
+          ]
+            .filter(Boolean)
+            .join(" ");
+
+          return `
+            <article class="admin-card">
+              <h3>${escapeHTML(item.name || "")}</h3>
+              <div class="admin-meta">${escapeHTML(item.hotelSlug || item.hotel_slug || "")} - ${escapeHTML(item.category || "combos")}</div>
+
+              <div class="admin-row"><strong>DB ID:</strong> ${escapeHTML(item.id ?? "")}</div>
+              <div class="admin-row"><strong>Combo Item ID:</strong> ${escapeHTML(item.itemId || item.item_id || "")}</div>
+              <div class="admin-row"><strong>Combo Price:</strong> Rs. ${escapeHTML(item.price ?? "")}</div>
+              <div class="admin-row"><strong>Original Price:</strong> Rs. ${escapeHTML(item.originalPrice ?? 0)}</div>
+              <div class="admin-row"><strong>Savings:</strong> Rs. ${escapeHTML(item.savings ?? 0)}</div>
+              <div class="admin-row"><strong>Badge:</strong> ${escapeHTML(item.badge || "")}</div>
+              <div class="admin-row"><strong>Tag:</strong> ${escapeHTML(item.tag || "")}</div>
+              <div class="admin-row"><strong>Window:</strong> ${escapeHTML(availabilityWindow || "Always available")}</div>
+              <div class="admin-row"><strong>Includes:</strong> ${escapeHTML(childItemSummary)}</div>
+              <div class="admin-row admin-state-line">
+                <strong>State:</strong>
+                <div class="admin-state-list">
+                  ${buildBooleanStateBadge(item.isAvailable, {
+                    onLabel: "Available",
+                    offLabel: "Unavailable",
+                    onTone: "success",
+                    offTone: "warning"
+                  })}
+                  ${buildBooleanStateBadge(item.isArchived, {
+                    onLabel: "Archived",
+                    offLabel: "Live",
+                    onTone: "danger",
+                    offTone: "neutral"
+                  })}
+                </div>
+              </div>
+              <div class="admin-row"><strong>Sort Order:</strong> ${escapeHTML(item.sortOrder ?? 0)}</div>
+
+              <div class="status-row admin-card-actions">
+                <button class="status-btn" data-edit-menu-combo data-id="${escapeHTML(item.id)}">
+                  Edit Combo
+                </button>
+                <button
+                  class="status-btn"
+                  data-toggle-menu-combo-active
+                  data-id="${escapeHTML(item.id)}"
+                  data-active="${escapeHTML(String(item.isAvailable === true))}">
+                  ${item.isAvailable === true ? "Deactivate Combo" : "Activate Combo"}
+                </button>
+                <button
+                  class="status-btn"
+                  data-delete-menu-combo
+                  data-id="${escapeHTML(item.id)}">
+                  Delete Combo
+                </button>
+              </div>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 function renderGalleryItems() {
   const content = $("#adminContent");
   if (!content) return;
@@ -1571,6 +2526,83 @@ function renderGalleryItems() {
                 </button>
                 `
                 }
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPopupNotifications() {
+  const content = $("#adminContent");
+  if (!content) return;
+
+  if (!state.popupNotifications.length) {
+    content.innerHTML = `
+      ${buildAdminListSummaryCard({
+        title: "Popup Notifications",
+        count: 0,
+        description: "Browse hotel-specific popup records for the current scope."
+      })}
+      <p class="empty-state">No popup notifications found.</p>
+    `;
+    return;
+  }
+
+  content.innerHTML = `
+    ${buildAdminListSummaryCard({
+      title: "Popup Notifications",
+      count: state.popupNotifications.length,
+      description: "Browse hotel-specific popup records for the current scope."
+    })}
+    <div class="admin-grid">
+      ${state.popupNotifications
+        .map(
+          (item) => `
+            <article class="admin-card">
+              <h3>${escapeHTML(item.title || `Popup #${item.id || ""}`)}</h3>
+              <div class="admin-meta">${escapeHTML(item.hotel_slug || item.hotelSlug || "")} • ${escapeHTML(item.display_mode || item.displayMode || "once_per_session")}</div>
+
+              <div class="admin-row"><strong>DB ID:</strong> ${escapeHTML(item.id ?? "")}</div>
+              <div class="admin-row"><strong>Description:</strong> ${escapeHTML(item.description || "")}</div>
+              <div class="admin-row"><strong>Image URL:</strong> ${escapeHTML(item.image_url || item.imageUrl || "")}</div>
+              <div class="admin-row"><strong>Storage Path:</strong> ${escapeHTML(item.storage_path || item.storagePath || "")}</div>
+              <div class="admin-row"><strong>CTA:</strong> ${escapeHTML(item.cta_text || item.ctaText || "")}</div>
+              <div class="admin-row"><strong>CTA Link:</strong> ${escapeHTML(item.cta_link || item.ctaLink || "")}</div>
+              <div class="admin-row"><strong>Priority:</strong> ${escapeHTML(item.priority ?? 0)}</div>
+              <div class="admin-row"><strong>Start:</strong> ${escapeHTML(item.start_at || item.startAt || "")}</div>
+              <div class="admin-row"><strong>End:</strong> ${escapeHTML(item.end_at || item.endAt || "")}</div>
+              <div class="admin-row admin-state-line">
+                <strong>State:</strong>
+                <div class="admin-state-list">
+                  ${buildBooleanStateBadge(item.is_active, {
+                    onLabel: "Active",
+                    offLabel: "Inactive",
+                    onTone: "success",
+                    offTone: "warning"
+                  })}
+                </div>
+              </div>
+
+              <div class="status-row admin-card-actions">
+                <button class="status-btn" data-edit-popup-notification data-id="${escapeHTML(item.id)}">
+                  Edit Popup
+                </button>
+                <button
+                  class="status-btn"
+                  data-toggle-popup-notification-active
+                  data-id="${escapeHTML(item.id)}"
+                  data-active="${escapeHTML(String(item.is_active === true))}">
+                  ${item.is_active === true ? "Deactivate Popup" : "Activate Popup"}
+                </button>
+                <button
+                  class="status-btn"
+                  data-delete-popup-notification
+                  data-id="${escapeHTML(item.id)}">
+                  Delete Popup
+                </button>
               </div>
             </article>
           `
@@ -1839,6 +2871,18 @@ function bindEditActions() {
       return;
     }
 
+    const menuComboBtn = e.target.closest("[data-edit-menu-combo]");
+    if (menuComboBtn) {
+      const id = menuComboBtn.dataset.id;
+      const item = state.menuCombos.find((entry) => String(entry.id) === String(id));
+      if (!item) return;
+
+      setSectionVisibility("menuComboFormSection", true);
+      fillMenuComboForm(item);
+      scrollSectionIntoView("menuComboFormSection");
+      return;
+    }
+
     const galleryBtn = e.target.closest("[data-edit-gallery-item]");
     if (galleryBtn) {
       const id = galleryBtn.dataset.id;
@@ -1884,6 +2928,18 @@ function bindEditActions() {
       document.getElementById("testimonialIsApprovedInput").checked =
         item.is_approved !== false;
       scrollSectionIntoView("testimonialFormSection");
+      return;
+    }
+
+    const popupNotificationBtn = e.target.closest("[data-edit-popup-notification]");
+    if (popupNotificationBtn) {
+      const id = popupNotificationBtn.dataset.id;
+      const item = state.popupNotifications.find((entry) => String(entry.id) === String(id));
+      if (!item) return;
+
+      setSectionVisibility("popupNotificationFormSection", true);
+      fillPopupNotificationForm(item);
+      scrollSectionIntoView("popupNotificationFormSection");
       return;
     }
 
@@ -1949,6 +3005,27 @@ if (archiveBtn) {
   return;
 }
 
+const menuComboActiveBtn = e.target.closest("[data-toggle-menu-combo-active]");
+if (menuComboActiveBtn) {
+  const id = menuComboActiveBtn.dataset.id;
+  const currentActive = menuComboActiveBtn.dataset.active === "true";
+
+  const confirmMessage = currentActive
+    ? "Deactivate this combo offer?"
+    : "Activate this combo offer?";
+
+  if (!window.confirm(confirmMessage)) return;
+
+  try {
+    await toggleMenuComboActive(id, !currentActive);
+    await loadTabData();
+  } catch (error) {
+    console.error("Toggle menu combo active failed:", error);
+    alert(error.message || "Failed to update combo offer state");
+  }
+  return;
+}
+
 const galleryArchiveBtn = e.target.closest("[data-toggle-gallery-archive]");
 if (galleryArchiveBtn) {
   const id = galleryArchiveBtn.dataset.id;
@@ -1991,6 +3068,27 @@ if (galleryActiveBtn) {
   return;
 }
 
+const popupNotificationActiveBtn = e.target.closest("[data-toggle-popup-notification-active]");
+if (popupNotificationActiveBtn) {
+  const id = popupNotificationActiveBtn.dataset.id;
+  const currentActive = popupNotificationActiveBtn.dataset.active === "true";
+
+  const confirmMessage = currentActive
+    ? "Deactivate this popup notification?"
+    : "Activate this popup notification?";
+
+  if (!window.confirm(confirmMessage)) return;
+
+  try {
+    await togglePopupNotificationActive(id, !currentActive);
+    await loadTabData();
+  } catch (error) {
+    console.error("Toggle popup notification active failed:", error);
+    alert("Failed to update popup notification state");
+  }
+  return;
+}
+
 const deleteGalleryBtn = e.target.closest("[data-delete-gallery-item]");
 if (deleteGalleryBtn) {
   const id = deleteGalleryBtn.dataset.id;
@@ -2024,6 +3122,29 @@ if (deleteGalleryBtn) {
   return;
 }
 
+const deletePopupNotificationBtn = e.target.closest("[data-delete-popup-notification]");
+if (deletePopupNotificationBtn) {
+  const id = deletePopupNotificationBtn.dataset.id;
+
+  if (!window.confirm("Delete this popup notification permanently? This cannot be undone.")) {
+    return;
+  }
+
+  try {
+    await deletePopupNotification(id);
+
+    if (String(document.getElementById("popupNotificationDbId")?.value || "") === String(id)) {
+      resetPopupNotificationForm();
+    }
+
+    await loadTabData();
+  } catch (error) {
+    console.error("Delete popup notification failed:", error);
+    alert("Failed to delete popup notification");
+  }
+  return;
+}
+
 const deleteMenuBtn = e.target.closest("[data-delete-menu-item]");
 if (deleteMenuBtn) {
   const id = deleteMenuBtn.dataset.id;
@@ -2038,6 +3159,29 @@ if (deleteMenuBtn) {
   } catch (error) {
     console.error("Delete menu item failed:", error);
     alert("Failed to delete menu item");
+  }
+  return;
+}
+
+const deleteMenuComboBtn = e.target.closest("[data-delete-menu-combo]");
+if (deleteMenuComboBtn) {
+  const id = deleteMenuComboBtn.dataset.id;
+
+  if (!window.confirm("Delete this combo offer permanently? This cannot be undone.")) {
+    return;
+  }
+
+  try {
+    await deleteMenuCombo(id);
+
+    if (String(document.getElementById("menuComboDbId")?.value || "") === String(id)) {
+      resetMenuComboForm();
+    }
+
+    await loadTabData();
+  } catch (error) {
+    console.error("Delete menu combo failed:", error);
+    alert(error.message || "Failed to delete combo offer");
   }
   return;
 }
@@ -2179,6 +3323,12 @@ function renderHotelFilter() {
 
   select.value = matchingOption?.value || "";
   syncMenuFormHotelSlug({ force: true });
+  syncMenuComboFormHotelSlug({ force: true });
+  syncPopupNotificationFormHotelSlug({ force: true });
+  syncRoomFeatureSettingsHotelSlug({ force: true });
+  syncRoomTypeFormHotelSlug({ force: true });
+  syncRoomFormHotelSlug({ force: true });
+  syncRoomBookingFormHotelSlug({ force: true });
 }
 
 function getOrderContextValues(order = {}) {
@@ -2214,6 +3364,58 @@ function buildOrderContextRows(order = {}) {
     rows.push(
       `<div class="admin-row"><strong>Source:</strong> ${escapeHTML(orderSource)}</div>`
     );
+  }
+
+  return rows.join("");
+}
+
+function getOrderRoomServiceValues(order = {}) {
+  const roomService =
+    order.roomService && typeof order.roomService === "object" && !Array.isArray(order.roomService)
+      ? order.roomService
+      : {};
+
+  return {
+    roomId: order.room_id || roomService.roomId || "",
+    roomBookingId: order.room_booking_id || roomService.roomBookingId || "",
+    roomNumber: order.room_number || roomService.roomNumber || "",
+    guestName: order.room_service_guest_name || roomService.guestName || "",
+    chargeToRoom:
+      order.room_service_charge_to_room === true ||
+      roomService.chargeToRoom === true
+  };
+}
+
+function buildOrderRoomServiceRows(order = {}) {
+  const roomService = getOrderRoomServiceValues(order);
+  const hasRoomService =
+    roomService.roomId ||
+    roomService.roomBookingId ||
+    roomService.roomNumber ||
+    roomService.guestName ||
+    roomService.chargeToRoom;
+
+  if (!hasRoomService) return "";
+
+  const rows = [];
+  rows.push(
+    `<div class="admin-row"><strong>Room Service:</strong> ${escapeHTML(roomService.roomNumber ? `Room ${roomService.roomNumber}` : "Yes")}</div>`
+  );
+
+  if (roomService.roomBookingId) {
+    rows.push(
+      `<div class="admin-row"><strong>Room Booking:</strong> ${escapeHTML(roomService.roomBookingId)}</div>`
+    );
+  }
+
+  if (roomService.guestName) {
+    rows.push(
+      `<div class="admin-row"><strong>Room Guest:</strong> ${escapeHTML(roomService.guestName)}</div>`
+    );
+  }
+
+  if (roomService.chargeToRoom) {
+    rows.push('<div class="admin-row"><strong>Billing:</strong> Add food bill to room</div>');
   }
 
   return rows.join("");
@@ -2482,10 +3684,80 @@ function getOrderBillItems(order = {}) {
   return Array.isArray(order.items) ? order.items : [];
 }
 
+function buildOrderComboSummary(item = {}) {
+  if (String(item?.itemType || "single").trim() !== "combo") {
+    return "";
+  }
+
+  return (Array.isArray(item?.comboItems) ? item.comboItems : [])
+    .map((comboItem) => {
+      const quantity = getNumberValue(comboItem?.quantity) || 1;
+      const comboItemName = String(comboItem?.name || comboItem?.itemId || "").trim();
+      return comboItemName ? `${quantity}x ${comboItemName}` : "";
+    })
+    .filter(Boolean)
+    .join(" + ");
+}
+
+function buildOrderItemMetaLines(item = {}) {
+  const lines = [];
+  const comboSummary = buildOrderComboSummary(item);
+  const originalPrice = getNumberValue(item?.originalPrice);
+  const savings = getNumberValue(item?.savings);
+  const price = getNumberValue(item?.price) || 0;
+
+  if (comboSummary) {
+    lines.push(`Includes: ${comboSummary}`);
+  }
+
+  if (
+    String(item?.itemType || "single").trim() === "combo" &&
+    originalPrice !== null &&
+    savings !== null &&
+    originalPrice > price &&
+    savings > 0
+  ) {
+    lines.push(`Was ${formatBillMoney(originalPrice)} | Save ${formatBillMoney(savings)}`);
+  }
+
+  return lines;
+}
+
+function buildOrderItemsDetailsMarkup(order = {}) {
+  const items = getOrderBillItems(order);
+
+  if (!items.length) {
+    return `<p class="admin-toolbar-help">No items found for this order.</p>`;
+  }
+
+  return `
+    <ol class="admin-order-items">
+      ${items
+        .map((item) => {
+          const name = item?.name || item?.id || "Item";
+          const qty = getNumberValue(item?.qty) || 0;
+          const lineTotal = getNumberValue(item?.lineTotal) ?? getOrderBillItemLineTotal(item);
+          const metaLines = buildOrderItemMetaLines(item);
+          const metaMarkup = metaLines.length
+            ? `<div class="admin-order-item-meta">${metaLines
+                .map((line) => escapeHTML(line))
+                .join("<br>")}</div>`
+            : "";
+
+          return `
+            <li>
+              <strong>${escapeHTML(name)}</strong> x ${escapeHTML(qty)} - ${escapeHTML(formatBillMoney(lineTotal))}
+              ${metaMarkup}
+            </li>
+          `;
+        })
+        .join("")}
+    </ol>
+  `;
+}
+
 function getOrderBillItemLineTotal(item = {}) {
-  const qty = getNumberValue(item.qty) || 0;
-  const price = getNumberValue(item.price) || 0;
-  return qty * price;
+  return getNumberValue(item?.lineTotal) ?? ((getNumberValue(item?.qty) || 0) * (getNumberValue(item?.price) || 0));
 }
 
 function getOrderBillItemSubtotal(order = {}) {
@@ -2584,14 +3856,22 @@ function buildOrderBillPrintDocument(order = {}) {
   const itemRows = items.length
     ? items
         .map((item, index) => {
-          const qty = getNumberValue(item.qty) || 0;
-          const price = getNumberValue(item.price) || 0;
-          const lineTotal = getOrderBillItemLineTotal(item);
+      const qty = getNumberValue(item.qty) || 0;
+      const price = getNumberValue(item.price) || 0;
+      const lineTotal = getOrderBillItemLineTotal(item);
+      const itemMetaMarkup = buildOrderItemMetaLines(item)
+        .map((line) => `<span class="bill-item-meta">${escapeHTML(line)}</span>`)
+        .join("");
 
-          return `
+      return `
             <tr>
               <td>${escapeHTML(index + 1)}</td>
-              <td>${escapeHTML(item.name || item.id || "Item")}</td>
+              <td>
+                <div class="bill-item-name">
+                  <strong>${escapeHTML(item.name || item.id || "Item")}</strong>
+                  ${itemMetaMarkup}
+                </div>
+              </td>
               <td>${escapeHTML(qty)}</td>
               <td>${escapeHTML(formatBillMoney(price))}</td>
               <td>${escapeHTML(formatBillMoney(lineTotal))}</td>
@@ -2619,6 +3899,8 @@ function buildOrderBillPrintDocument(order = {}) {
     table { width: 100%; border-collapse: collapse; margin-top: 16px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 14px; }
     th { background: #f2f2f2; }
+    .bill-item-name strong { display: block; }
+    .bill-item-meta { display: block; margin-top: 4px; color: #555; font-size: 12px; line-height: 1.45; }
     .totals { max-width: 340px; margin-left: auto; }
     .note { margin-top: 18px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 14px; }
     .actions { display: flex; justify-content: flex-end; margin-bottom: 18px; }
@@ -2828,6 +4110,7 @@ function renderOrders() {
               <div class="admin-row"><strong>Phone:</strong> ${escapeHTML(order.customer_phone || "")}</div>
               <div class="admin-row"><strong>Address:</strong> ${escapeHTML(order.customer_address || "")}</div>
               ${buildOrderContextRows(order)}
+              ${buildOrderRoomServiceRows(order)}
               ${buildOrderCreatedByRow(order)}
               <div class="admin-row"><strong>Payment:</strong> ${escapeHTML(order.payment_method || "")}</div>
               ${buildOrderBillingRows(order)}
@@ -2839,7 +4122,7 @@ function renderOrders() {
 
               <details>
                 <summary>View Items</summary>
-                <pre class="json-box">${escapeHTML(JSON.stringify(order.items || [], null, 2))}</pre>
+                ${buildOrderItemsDetailsMarkup(order)}
               </details>
 
               <div class="status-row">
@@ -3037,6 +4320,913 @@ function renderHotels() {
   `;
 }
 
+function getRoomStatusLabel(status = "") {
+  return String(status || "available").replace(/_/g, " ");
+}
+
+function getRoomStatusTone(status = "") {
+  const normalizedStatus = normalizeValue(status);
+
+  if (normalizedStatus === "available") return "success";
+  if (normalizedStatus === "booked" || normalizedStatus === "occupied") return "warning";
+  if (normalizedStatus === "maintenance" || normalizedStatus === "inactive") return "danger";
+  return "neutral";
+}
+
+function getRoomBookingStatusTone(status = "") {
+  const normalizedStatus = normalizeValue(status);
+
+  if (normalizedStatus === "confirmed" || normalizedStatus === "checked_in") return "success";
+  if (normalizedStatus === "pending") return "warning";
+  if (normalizedStatus === "cancelled" || normalizedStatus === "no_show") return "danger";
+  return "neutral";
+}
+
+function formatAdminMoney(amount = 0) {
+  const value = Number(amount || 0);
+  return `Rs. ${Number.isFinite(value) ? value.toFixed(2) : "0.00"}`;
+}
+
+function getRoomTypeName(room = {}) {
+  const roomType = state.roomTypes.find(
+    (item) => String(item.id) === String(room.room_type_id)
+  );
+
+  return roomType?.name || "";
+}
+
+function buildRoomBookingRoomLabel(room = {}) {
+  const title = room.title || `Room ${room.room_number || room.id}`;
+  const status = room.status || "available";
+  const price = formatAdminMoney(room.discount_price ?? room.base_price ?? 0);
+  const typeName = getRoomTypeName(room);
+
+  return [
+    title,
+    typeName ? `Type: ${typeName}` : "",
+    `Status: ${status}`,
+    price
+  ].filter(Boolean).join(" | ");
+}
+
+function getAdminRoomStatusOptions(currentStatus = "") {
+  const statuses = [
+    ["available", "Available"],
+    ["booked", "Booked"],
+    ["occupied", "Occupied"],
+    ["cleaning", "Cleaning"],
+    ["maintenance", "Maintenance"],
+    ["inactive", "Inactive"]
+  ];
+  const normalizedCurrentStatus = normalizeValue(currentStatus || "available");
+
+  return statuses
+    .map(([value, label]) => `
+      <option value="${escapeHTML(value)}" ${normalizedCurrentStatus === value ? "selected" : ""}>
+        ${escapeHTML(label)}
+      </option>
+    `)
+    .join("");
+}
+
+function buildAdminRoomInventoryControls(room = {}) {
+  const roomId = String(room.id || "");
+  const isActive = room.is_active !== false;
+  const basePrice = Number(room.base_price || 0);
+  const discountPrice =
+    room.discount_price === null || room.discount_price === undefined
+      ? ""
+      : Number(room.discount_price || 0).toFixed(2);
+  const taxPercent = Number(room.tax_percent || 0);
+
+  return `
+    <div class="admin-card-actions" data-room-inventory-actions="${escapeHTML(roomId)}">
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomInventoryStatus-${escapeHTML(roomId)}">Room Status</label>
+        <select
+          id="roomInventoryStatus-${escapeHTML(roomId)}"
+          class="status-select room-inventory-status-select"
+          data-id="${escapeHTML(roomId)}"
+        >
+          ${getAdminRoomStatusOptions(room.status)}
+        </select>
+        <p class="admin-field-hint">Maintenance and inactive rooms are excluded from public availability.</p>
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomInventoryActive-${escapeHTML(roomId)}">Inventory State</label>
+        <select
+          id="roomInventoryActive-${escapeHTML(roomId)}"
+          class="status-select room-inventory-active-select"
+          data-id="${escapeHTML(roomId)}"
+        >
+          <option value="true" ${isActive ? "selected" : ""}>Active</option>
+          <option value="false" ${isActive ? "" : "selected"}>Inactive</option>
+        </select>
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomInventoryBasePrice-${escapeHTML(roomId)}">Base Price</label>
+        <input
+          id="roomInventoryBasePrice-${escapeHTML(roomId)}"
+          class="room-inventory-base-price"
+          data-id="${escapeHTML(roomId)}"
+          type="number"
+          min="0"
+          step="0.01"
+          value="${escapeHTML(basePrice.toFixed(2))}"
+        />
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomInventoryDiscountPrice-${escapeHTML(roomId)}">Discounted Nightly Price (amount, not %)</label>
+        <input
+          id="roomInventoryDiscountPrice-${escapeHTML(roomId)}"
+          class="room-inventory-discount-price"
+          data-id="${escapeHTML(roomId)}"
+          type="number"
+          min="0"
+          step="0.01"
+          value="${escapeHTML(discountPrice)}"
+          placeholder="Blank for no discount"
+        />
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomInventoryTaxPercent-${escapeHTML(roomId)}">Tax/GST %</label>
+        <input
+          id="roomInventoryTaxPercent-${escapeHTML(roomId)}"
+          class="room-inventory-tax-percent"
+          data-id="${escapeHTML(roomId)}"
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          value="${escapeHTML(taxPercent.toFixed(2))}"
+        />
+        <p class="admin-field-hint">Public pricing uses discount price when present.</p>
+      </div>
+      <button
+        type="button"
+        class="status-btn"
+        data-update-room-inventory
+        data-id="${escapeHTML(roomId)}"
+      >Update Room</button>
+    </div>
+  `;
+}
+
+function buildAdminRoomTypeControls(roomType = {}) {
+  const roomTypeId = String(roomType.id || "");
+  const isActive = roomType.is_active !== false;
+  const basePrice = Number(roomType.base_price || 0);
+  const maxAdults = Number(roomType.max_adults || 0);
+  const maxChildren = Number(roomType.max_children || 0);
+
+  return `
+    <div class="admin-card-actions" data-room-type-actions="${escapeHTML(roomTypeId)}">
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomTypeBasePrice-${escapeHTML(roomTypeId)}">Base Price</label>
+        <input
+          id="roomTypeBasePrice-${escapeHTML(roomTypeId)}"
+          class="room-type-base-price"
+          data-id="${escapeHTML(roomTypeId)}"
+          type="number"
+          min="0"
+          step="0.01"
+          value="${escapeHTML(basePrice.toFixed(2))}"
+        />
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomTypeMaxAdults-${escapeHTML(roomTypeId)}">Max Adults</label>
+        <input
+          id="roomTypeMaxAdults-${escapeHTML(roomTypeId)}"
+          class="room-type-max-adults"
+          data-id="${escapeHTML(roomTypeId)}"
+          type="number"
+          min="0"
+          max="100"
+          step="1"
+          value="${escapeHTML(String(maxAdults))}"
+        />
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomTypeMaxChildren-${escapeHTML(roomTypeId)}">Max Children</label>
+        <input
+          id="roomTypeMaxChildren-${escapeHTML(roomTypeId)}"
+          class="room-type-max-children"
+          data-id="${escapeHTML(roomTypeId)}"
+          type="number"
+          min="0"
+          max="100"
+          step="1"
+          value="${escapeHTML(String(maxChildren))}"
+        />
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomTypeActive-${escapeHTML(roomTypeId)}">Type State</label>
+        <select
+          id="roomTypeActive-${escapeHTML(roomTypeId)}"
+          class="status-select room-type-active-select"
+          data-id="${escapeHTML(roomTypeId)}"
+        >
+          <option value="true" ${isActive ? "selected" : ""}>Active</option>
+          <option value="false" ${isActive ? "" : "selected"}>Inactive</option>
+        </select>
+        <p class="admin-field-hint">Inactive room types should not be used for new room inventory.</p>
+      </div>
+      <button
+        type="button"
+        class="status-btn"
+        data-update-room-type
+        data-id="${escapeHTML(roomTypeId)}"
+      >Update Room Type</button>
+    </div>
+  `;
+}
+
+function populateRoomBookingRoomOptions(rooms = state.rooms) {
+  const select = document.getElementById("roomBookingRoomIdInput");
+  const help = document.getElementById("roomBookingRoomHelp");
+  if (!select) return;
+
+  const hotelSlug =
+    document.getElementById("roomBookingHotelSlugInput")?.value.trim() || "";
+  const scopedRooms = (rooms || []).filter((room) => {
+    if (hotelSlug && room.hotel_slug !== hotelSlug) return false;
+    return room.is_active !== false;
+  });
+
+  if (!hotelSlug) {
+    select.innerHTML = `<option value="">Select a hotel first</option>`;
+    if (help) help.textContent = "Choose a hotel scope first to load that hotel's rooms.";
+    return;
+  }
+
+  if (!scopedRooms.length) {
+    select.innerHTML = `<option value="">No active rooms found for this hotel</option>`;
+    if (help) help.textContent = "Add rooms for this hotel before creating a manual booking.";
+    return;
+  }
+
+  select.innerHTML = `
+    <option value="">Select room</option>
+    ${scopedRooms.map((room) => `
+      <option value="${escapeHTML(room.id)}">${escapeHTML(buildRoomBookingRoomLabel(room))}</option>
+    `).join("")}
+  `;
+  if (help) help.textContent = `${scopedRooms.length} active room${scopedRooms.length === 1 ? "" : "s"} loaded for ${hotelSlug}.`;
+}
+
+async function loadRoomBookingRoomOptions() {
+  const hotelSlug =
+    document.getElementById("roomBookingHotelSlugInput")?.value.trim() || "";
+  const help = document.getElementById("roomBookingRoomHelp");
+
+  if (!hotelSlug) {
+    populateRoomBookingRoomOptions([]);
+    return;
+  }
+
+  try {
+    if (help) help.textContent = "Loading rooms...";
+    const result = await fetchJson(
+      `${API_BASE}/room-booking/rooms?hotelSlug=${encodeURIComponent(hotelSlug)}`
+    );
+    state.rooms = result.rooms || state.rooms;
+    populateRoomBookingRoomOptions(result.rooms || []);
+  } catch (error) {
+    console.error("Manual booking room load failed:", error);
+    if (help) help.textContent = error.message || "Failed to load rooms.";
+  }
+}
+
+function getRoomBookingAvailabilityCriteria() {
+  const hotelSlug =
+    document.getElementById("roomBookingHotelSlugInput")?.value.trim() || "";
+  const checkInDate =
+    document.getElementById("roomBookingCheckInInput")?.value.trim() || "";
+  const checkOutDate =
+    document.getElementById("roomBookingCheckOutInput")?.value.trim() || "";
+  const adults = Number(document.getElementById("roomBookingAdultsInput")?.value || 1);
+  const children = Number(document.getElementById("roomBookingChildrenInput")?.value || 0);
+
+  return {
+    hotelSlug,
+    checkInDate,
+    checkOutDate,
+    adults: Number.isFinite(adults) ? Math.max(0, adults) : 1,
+    children: Number.isFinite(children) ? Math.max(0, children) : 0
+  };
+}
+
+async function loadRoomBookingAvailableRoomOptions() {
+  const help = document.getElementById("roomBookingRoomHelp");
+  const criteria = getRoomBookingAvailabilityCriteria();
+
+  if (!criteria.hotelSlug) {
+    alert("Hotel slug is required before checking availability.");
+    return;
+  }
+
+  if (
+    !criteria.checkInDate ||
+    !criteria.checkOutDate ||
+    criteria.checkOutDate <= criteria.checkInDate
+  ) {
+    alert("Choose valid check-in and check-out dates before checking availability.");
+    return;
+  }
+
+  const params = new URLSearchParams({
+    hotelSlug: criteria.hotelSlug,
+    checkInDate: criteria.checkInDate,
+    checkOutDate: criteria.checkOutDate,
+    adults: String(criteria.adults),
+    children: String(criteria.children)
+  });
+
+  try {
+    if (help) help.textContent = "Checking room availability...";
+    const result = await fetchJson(
+      `${API_BASE}/room-booking/availability?${params.toString()}`
+    );
+    const rooms = Array.isArray(result.rooms) ? result.rooms : [];
+    state.rooms = rooms.length ? mergeAdminRoomsById(state.rooms, rooms) : state.rooms;
+    populateRoomBookingRoomOptions(rooms);
+
+    if (help) {
+      help.textContent = rooms.length
+        ? `${rooms.length} available room${rooms.length === 1 ? "" : "s"} found for selected dates.`
+        : "No rooms are available for the selected dates and guest count.";
+    }
+  } catch (error) {
+    console.error("Manual booking availability check failed:", error);
+    if (help) help.textContent = error.message || "Failed to check room availability.";
+    alert(error.message || "Failed to check room availability");
+  }
+}
+
+function mergeAdminRoomsById(existingRooms = [], nextRooms = []) {
+  const roomMap = new Map();
+  existingRooms.forEach((room) => {
+    if (room?.id !== undefined) {
+      roomMap.set(String(room.id), room);
+    }
+  });
+  nextRooms.forEach((room) => {
+    if (room?.id !== undefined) {
+      roomMap.set(String(room.id), room);
+    }
+  });
+  return Array.from(roomMap.values());
+}
+
+function getRoomBookingSummaryCounts(bookings = []) {
+  return bookings.reduce(
+    (counts, booking) => {
+      const status = normalizeValue(booking.booking_status || "pending");
+      const paymentStatus = normalizeValue(booking.payment_status || "unpaid");
+
+      counts.total += 1;
+      if (status === "pending") counts.pending += 1;
+      if (status === "confirmed") counts.confirmed += 1;
+      if (status === "checked_in") counts.checkedIn += 1;
+      if (status === "checked_out") counts.checkedOut += 1;
+      if (status === "cancelled") counts.cancelled += 1;
+      if (paymentStatus === "paid") counts.paid += 1;
+      if (paymentStatus === "partial") counts.partial += 1;
+      if (paymentStatus === "unpaid") counts.unpaid += 1;
+      return counts;
+    },
+    {
+      total: 0,
+      pending: 0,
+      confirmed: 0,
+      checkedIn: 0,
+      checkedOut: 0,
+      cancelled: 0,
+      paid: 0,
+      partial: 0,
+      unpaid: 0
+    }
+  );
+}
+
+function buildRoomBookingAdminQueryString(hotelSlug = "") {
+  const params = new URLSearchParams();
+  const filters = state.roomBookingFilters || {};
+
+  if (hotelSlug) {
+    params.set("hotelSlug", hotelSlug);
+  }
+
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+
+  if (filters.fromDate) {
+    params.set("fromDate", filters.fromDate);
+  }
+
+  if (filters.toDate) {
+    params.set("toDate", filters.toDate);
+  }
+
+  const limit = Number(filters.limit || 100);
+  if (Number.isInteger(limit) && limit >= 1 && limit <= 200) {
+    params.set("limit", String(limit));
+  }
+
+  const queryString = params.toString();
+  return queryString ? `?${queryString}` : "";
+}
+
+function buildRoomBookingFilterMarkup() {
+  const filters = state.roomBookingFilters || {};
+  const statusOptions = [
+    ["", "All Statuses"],
+    ["pending", "Pending"],
+    ["confirmed", "Confirmed"],
+    ["checked_in", "Checked In"],
+    ["checked_out", "Checked Out"],
+    ["cancelled", "Cancelled"],
+    ["no_show", "No Show"]
+  ];
+  const limitOptions = ["25", "50", "100", "200"];
+  const currentLimit = String(filters.limit || "100");
+
+  return `
+    <form id="roomBookingFiltersForm" class="admin-grid" style="margin-bottom: 16px;">
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomBookingFilterStatus">Booking Status</label>
+        <select id="roomBookingFilterStatus" name="status">
+          ${statusOptions.map(([value, label]) => `
+            <option value="${escapeHTML(value)}" ${filters.status === value ? "selected" : ""}>
+              ${escapeHTML(label)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomBookingFilterFromDate">Check-in From</label>
+        <input id="roomBookingFilterFromDate" name="fromDate" type="date" value="${escapeHTML(filters.fromDate || "")}" />
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomBookingFilterToDate">Check-in To</label>
+        <input id="roomBookingFilterToDate" name="toDate" type="date" value="${escapeHTML(filters.toDate || "")}" />
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomBookingFilterLimit">Limit</label>
+        <select id="roomBookingFilterLimit" name="limit">
+          ${limitOptions.map((value) => `
+            <option value="${escapeHTML(value)}" ${currentLimit === value ? "selected" : ""}>
+              ${escapeHTML(value)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+      <div class="status-row admin-card-actions">
+        <button type="submit" class="status-btn">Apply Booking Filters</button>
+        <button type="button" class="status-btn" data-reset-room-booking-filters>Reset Filters</button>
+      </div>
+    </form>
+  `;
+}
+
+function getAdminRoomBookingStatusOptions(currentStatus = "") {
+  const statuses = [
+    ["pending", "Pending"],
+    ["confirmed", "Confirmed"],
+    ["checked_in", "Checked In"],
+    ["checked_out", "Checked Out"],
+    ["cancelled", "Cancelled"],
+    ["no_show", "No Show"]
+  ];
+  const normalizedCurrentStatus = normalizeValue(currentStatus || "pending");
+
+  return statuses
+    .map(([value, label]) => `
+      <option value="${escapeHTML(value)}" ${normalizedCurrentStatus === value ? "selected" : ""}>
+        ${escapeHTML(label)}
+      </option>
+    `)
+    .join("");
+}
+
+function buildAdminRoomBookingControls(booking = {}) {
+  const bookingId = String(booking.id || "");
+  const hotelSlug = String(booking.hotel_slug || "");
+  const bookingStatus = normalizeValue(booking.booking_status || "pending");
+  const paymentStatus = normalizeValue(booking.payment_status || "unpaid");
+  const balanceAmount = Math.max(0, Number(booking.balance_amount || 0));
+  const isClosed = ["checked_out", "cancelled", "no_show"].includes(bookingStatus);
+  const canRecordPayment = balanceAmount > 0 && bookingStatus !== "cancelled" && paymentStatus !== "paid";
+  const cachedCheckoutSummary = state.roomCheckoutSummaries?.[bookingId];
+  const cachedCheckoutBill = state.roomCheckoutBills?.[bookingId];
+  const canReuseCachedCheckout =
+    cachedCheckoutSummary &&
+    cachedCheckoutBill &&
+    String(cachedCheckoutSummary.hotelSlug || hotelSlug) === hotelSlug;
+  const cachedCheckoutMarkup = canReuseCachedCheckout
+    ? buildAdminRoomCheckoutSummaryMarkup(cachedCheckoutSummary, cachedCheckoutBill)
+    : "";
+
+  return `
+    <div class="admin-card-actions" data-room-booking-actions="${escapeHTML(bookingId)}">
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomBookingStatus-${escapeHTML(bookingId)}">Booking Status</label>
+        <select
+          id="roomBookingStatus-${escapeHTML(bookingId)}"
+          class="room-booking-status-select"
+          data-id="${escapeHTML(bookingId)}"
+          data-hotel-slug="${escapeHTML(hotelSlug)}"
+          ${isClosed ? "disabled" : ""}
+        >
+          ${getAdminRoomBookingStatusOptions(bookingStatus)}
+        </select>
+        <p class="admin-field-hint">${isClosed ? "Closed bookings are locked by the backend." : "Use check-in before checkout."}</p>
+      </div>
+      <button
+        type="button"
+        class="status-btn"
+        data-update-room-booking-status
+        data-id="${escapeHTML(bookingId)}"
+        ${isClosed ? "disabled" : ""}
+      >Update Booking Status</button>
+    </div>
+
+    <div class="admin-card-actions" data-room-booking-payment="${escapeHTML(bookingId)}">
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomBookingPaymentAmount-${escapeHTML(bookingId)}">Collect Payment</label>
+        <input
+          id="roomBookingPaymentAmount-${escapeHTML(bookingId)}"
+          class="room-booking-payment-amount"
+          data-id="${escapeHTML(bookingId)}"
+          type="number"
+          min="0.01"
+          max="${escapeHTML(balanceAmount.toFixed(2))}"
+          step="0.01"
+          value="${escapeHTML(canRecordPayment ? balanceAmount.toFixed(2) : "")}"
+          placeholder="Amount"
+          ${canRecordPayment ? "" : "disabled"}
+        />
+        <p class="admin-field-hint">Current balance: ${escapeHTML(formatAdminMoney(balanceAmount))}</p>
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomBookingPaymentMethod-${escapeHTML(bookingId)}">Method</label>
+        <select
+          id="roomBookingPaymentMethod-${escapeHTML(bookingId)}"
+          class="room-booking-payment-method"
+          data-id="${escapeHTML(bookingId)}"
+          ${canRecordPayment ? "" : "disabled"}
+        >
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="card">Card</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="online">Online</option>
+        </select>
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="roomBookingPaymentTxn-${escapeHTML(bookingId)}">Transaction ID</label>
+        <input
+          id="roomBookingPaymentTxn-${escapeHTML(bookingId)}"
+          class="room-booking-payment-transaction"
+          data-id="${escapeHTML(bookingId)}"
+          maxlength="200"
+          placeholder="Optional"
+          ${canRecordPayment ? "" : "disabled"}
+        />
+      </div>
+      <button
+        type="button"
+        class="status-btn"
+        data-record-room-booking-payment
+        data-id="${escapeHTML(bookingId)}"
+        data-hotel-slug="${escapeHTML(hotelSlug)}"
+        ${canRecordPayment ? "" : "disabled"}
+      >Record Payment</button>
+    </div>
+
+    <div class="admin-card-actions">
+      <button
+        type="button"
+        class="status-btn"
+        data-view-room-checkout-summary
+        data-id="${escapeHTML(bookingId)}"
+        data-hotel-slug="${escapeHTML(hotelSlug)}"
+        ${bookingId ? "" : "disabled"}
+      >${canReuseCachedCheckout ? "Refresh Checkout Summary" : "Checkout Summary"}</button>
+    </div>
+    <div
+      class="admin-room-checkout-summary"
+      data-room-checkout-summary="${escapeHTML(bookingId)}"
+      ${cachedCheckoutMarkup ? "" : "hidden"}
+    >${cachedCheckoutMarkup}</div>
+  `;
+}
+
+function getRoomCombinedCheckoutSafeAmount(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0
+    ? Math.round(amount * 100) / 100
+    : 0;
+}
+
+function buildRoomCombinedCheckoutIdempotencyKey(scope = "admin", bookingId = "") {
+  const safeScope = String(scope || "admin").replace(/[^A-Za-z0-9._:-]/g, "-");
+  const safeBookingId = String(bookingId || "booking").replace(/[^A-Za-z0-9._:-]/g, "-");
+  return `${safeScope}:room-combined-checkout:${safeBookingId}:${Date.now()}`;
+}
+
+function buildAdminRoomCombinedCheckoutRequest(summary = {}, options = {}) {
+  const booking = summary.booking || {};
+  const totals = summary.totals || {};
+  const bookingId = String(options.bookingId || booking.id || "").trim();
+  const paymentMethod = String(options.paymentMethod || "cash").trim();
+
+  if (!bookingId) {
+    throw new Error("Room booking id is required for combined checkout.");
+  }
+
+  if (!paymentMethod) {
+    throw new Error("Payment method is required for combined checkout.");
+  }
+
+  return {
+    endpoint: `${API_BASE}/room-booking/bookings/${encodeURIComponent(bookingId)}/combined-checkout`,
+    payload: {
+      amount: getRoomCombinedCheckoutSafeAmount(totals.finalPayableAmount),
+      paymentMethod,
+      transactionId: String(options.transactionId || "").trim(),
+      notes: String(options.notes || "").trim(),
+      currency: String(options.currency || "INR").trim().toUpperCase(),
+      idempotencyKey: String(
+        options.idempotencyKey || buildRoomCombinedCheckoutIdempotencyKey("admin", bookingId)
+      )
+    }
+  };
+}
+
+async function postAdminRoomCombinedCheckout(summary = {}, options = {}) {
+  if (!isRoomCombinedCheckoutFrontendEnabled()) {
+    throw new Error(getRoomCombinedCheckoutHintText());
+  }
+
+  const request = buildAdminRoomCombinedCheckoutRequest(summary, options);
+  return fetchJson(request.endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request.payload)
+  });
+}
+
+async function handleAdminRoomCombinedCheckoutButton(button) {
+  const bookingId = String(button?.dataset?.id || "").trim();
+
+  if (!isRoomCombinedCheckoutFrontendEnabled()) {
+    alert(getRoomCombinedCheckoutHintText());
+    return;
+  }
+
+  const summary = state.roomCheckoutSummaries?.[bookingId];
+
+  if (!summary) {
+    alert("Load the checkout summary before finalizing combined checkout.");
+    return;
+  }
+
+  let request;
+  try {
+    request = buildAdminRoomCombinedCheckoutRequest(summary, { bookingId });
+  } catch (error) {
+    alert(error.message || "Unable to prepare combined checkout request.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Finalize combined checkout for booking ${bookingId}? This will submit ${formatAdminMoney(request.payload.amount)} to the backend settlement endpoint.`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const originalText = button.textContent;
+
+  try {
+    button.disabled = true;
+    button.textContent = "Finalizing...";
+    const result = await postAdminRoomCombinedCheckout(summary, {
+      bookingId,
+      idempotencyKey: request.payload.idempotencyKey
+    });
+    alert(result.message || "Combined checkout completed.");
+    if (result.checkoutBill) {
+      state.roomCheckoutBills = {
+        ...state.roomCheckoutBills,
+        [bookingId]: result.checkoutBill
+      };
+    }
+    await loadTabData();
+    const refreshedSummaryButton = Array.from(
+      document.querySelectorAll("[data-view-room-checkout-summary]")
+    ).find((candidate) => String(candidate.dataset.id || "") === bookingId);
+    refreshedSummaryButton?.click();
+  } catch (error) {
+    console.error("Admin combined checkout failed:", error);
+    alert(error.message || "Failed to finalize combined checkout.");
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+function buildAdminRoomCheckoutSummaryMarkup(summary = {}, bill = {}) {
+  const bookingId = summary.booking?.id || String(bill.bookingReference || "").split("-").pop();
+  const finalizeButton = bill.provisional
+    ? `<button type="button" class="status-btn" data-finalize-room-combined-checkout data-id="${escapeHTML(bookingId || "")}" ${getRoomCombinedCheckoutDisabledAttribute()}>Finalize Combined Checkout</button>`
+    : "";
+  return window.RoomCheckoutReceipt.buildCheckoutPanel({
+    bill,
+    finalizeButton,
+    bookingId
+  });
+}
+
+function buildAdminRoomCheckoutInvoiceDocument(bill = {}) {
+  return window.RoomCheckoutReceipt.buildPrintDocument(bill);
+}
+
+function openAdminRoomCheckoutInvoice(bill = {}) {
+  if (!window.RoomCheckoutReceipt.openPrintWindow(bill)) {
+    alert("Please allow popups to print or save the room checkout bill as PDF.");
+  }
+}
+
+function findAdminElementByDataId(selector = "", id = "") {
+  return Array.from(document.querySelectorAll(selector)).find(
+    (element) => String(element.dataset.id || "") === String(id)
+  );
+}
+
+function buildRoomSummaryMarkup() {
+  const availableRooms = state.rooms.filter(
+    (room) => normalizeValue(room.status) === "available" && room.is_active !== false
+  ).length;
+  const occupiedRooms = state.rooms.filter(
+    (room) => normalizeValue(room.status) === "occupied"
+  ).length;
+  const maintenanceRooms = state.rooms.filter((room) =>
+    ["maintenance", "inactive"].includes(normalizeValue(room.status))
+  ).length;
+  const bookingCounts = getRoomBookingSummaryCounts(state.roomBookings);
+
+  return `
+    <div class="admin-card admin-list-summary">
+      <h3>Room Snapshot</h3>
+      <p class="admin-toolbar-help">Room inventory and booking state for the selected hotel scope.</p>
+      <div class="status-row">
+        <span class="status-badge">Room Types: ${escapeHTML(state.roomTypes.length)}</span>
+        <span class="status-badge">Rooms: ${escapeHTML(state.rooms.length)}</span>
+        <span class="status-badge">Available: ${escapeHTML(availableRooms)}</span>
+        <span class="status-badge">Occupied: ${escapeHTML(occupiedRooms)}</span>
+        <span class="status-badge">Maintenance/Inactive: ${escapeHTML(maintenanceRooms)}</span>
+        <span class="status-badge">Bookings: ${escapeHTML(bookingCounts.total)}</span>
+        <span class="status-badge">Pending: ${escapeHTML(bookingCounts.pending)}</span>
+        <span class="status-badge">Checked In: ${escapeHTML(bookingCounts.checkedIn)}</span>
+        <span class="status-badge">Unpaid: ${escapeHTML(bookingCounts.unpaid)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderRoomsAdminList() {
+  const content = $("#adminContent");
+  if (!content) return;
+
+  if (!state.roomTypes.length && !state.rooms.length && !state.roomBookings.length) {
+    content.innerHTML = `
+      ${buildAdminListSummaryCard({
+        title: "Rooms",
+        count: 0,
+        description: "Room inventory and booking operations for the current hotel scope."
+      })}
+      <p class="empty-state">No room records found. Use the room booking API or the next room-management form step to add room types and rooms.</p>
+    `;
+    return;
+  }
+
+  content.innerHTML = `
+    ${buildAdminListSummaryCard({
+      title: "Rooms",
+      count: state.rooms.length,
+      description: "Room inventory and booking operations for the current hotel scope."
+    })}
+    ${buildRoomSummaryMarkup()}
+    <div class="admin-card admin-list-summary">
+      <h3>Rooms</h3>
+      ${
+        state.rooms.length
+          ? `<div class="admin-grid">
+              ${state.rooms.map((room) => `
+                <article class="admin-card">
+                  <h3>${escapeHTML(room.title || `Room ${room.room_number || room.id}`)}</h3>
+                  <div class="admin-meta">${escapeHTML(room.hotel_slug || "")}</div>
+                  <div class="admin-row"><strong>Room Number:</strong> ${escapeHTML(room.room_number || "")}</div>
+                  <div class="admin-row"><strong>Type:</strong> ${escapeHTML(getRoomTypeName(room) || "Unassigned")}</div>
+                  <div class="admin-row"><strong>Floor:</strong> ${escapeHTML(room.floor || "")}</div>
+                  <div class="admin-row"><strong>Capacity:</strong> ${escapeHTML(room.capacity ?? "")}</div>
+                  <div class="admin-row"><strong>Adults:</strong> ${escapeHTML(room.max_adults ?? "")}</div>
+                  <div class="admin-row"><strong>Children:</strong> ${escapeHTML(room.max_children ?? "")}</div>
+                  <div class="admin-row"><strong>Bed:</strong> ${escapeHTML(room.bed_type || "")}</div>
+                  <div class="admin-row"><strong>Price:</strong> ${escapeHTML(formatAdminMoney(room.discount_price ?? room.base_price ?? 0))}</div>
+                  <div class="admin-row admin-state-line">
+                    <strong>Status:</strong>
+                    <div class="admin-state-list">
+                      ${buildAdminStateBadge(getRoomStatusLabel(room.status), getRoomStatusTone(room.status))}
+                      ${buildBooleanStateBadge(room.is_active !== false, {
+                        onLabel: "Active",
+                        offLabel: "Inactive",
+                        onTone: "success",
+                        offTone: "danger"
+                      })}
+                    </div>
+                  </div>
+                  ${buildAdminRoomInventoryControls(room)}
+                </article>
+              `).join("")}
+            </div>`
+          : `<p class="empty-state">No rooms found.</p>`
+      }
+    </div>
+
+    <div class="admin-card admin-list-summary">
+      <h3>Room Bookings</h3>
+      ${buildRoomBookingFilterMarkup()}
+      ${
+        state.roomBookings.length
+          ? `<div class="admin-grid">
+              ${state.roomBookings.map((booking) => `
+                <article class="admin-card">
+                  <h3>Booking #${escapeHTML(booking.id)}</h3>
+                  <div class="admin-meta">${escapeHTML(booking.created_at || "")}</div>
+                  <div class="admin-row"><strong>Hotel:</strong> ${escapeHTML(booking.hotel_slug || "")}</div>
+                  <div class="admin-row"><strong>Room ID:</strong> ${escapeHTML(booking.room_id || "")}</div>
+                  <div class="admin-row"><strong>Guest:</strong> ${escapeHTML(booking.guest_name || "")}</div>
+                  <div class="admin-row"><strong>Phone:</strong> ${escapeHTML(booking.guest_phone || "")}</div>
+                  <div class="admin-row"><strong>Dates:</strong> ${escapeHTML(booking.check_in_date || "")} to ${escapeHTML(booking.check_out_date || "")}</div>
+                  <div class="admin-row"><strong>Nights:</strong> ${escapeHTML(booking.total_nights ?? "")}</div>
+                  <div class="admin-row"><strong>Total:</strong> ${escapeHTML(formatAdminMoney(booking.total_amount || 0))}</div>
+                  <div class="admin-row"><strong>Balance:</strong> ${escapeHTML(formatAdminMoney(booking.balance_amount || 0))}</div>
+                  <div class="admin-row admin-state-line">
+                    <strong>Status:</strong>
+                    <div class="admin-state-list">
+                      ${buildAdminStateBadge(getRoomStatusLabel(booking.booking_status), getRoomBookingStatusTone(booking.booking_status))}
+                      ${buildAdminStateBadge(getRoomStatusLabel(booking.payment_status || "unpaid"), booking.payment_status === "paid" ? "success" : "warning")}
+                    </div>
+                  </div>
+                  <div class="admin-row"><strong>Source:</strong> ${escapeHTML(booking.booking_source || "")}</div>
+                  ${buildAdminRoomBookingControls(booking)}
+                </article>
+              `).join("")}
+            </div>`
+          : `<p class="empty-state">No room bookings found.</p>`
+      }
+    </div>
+
+    <div class="admin-card admin-list-summary">
+      <h3>Room Types</h3>
+      ${
+        state.roomTypes.length
+          ? `<div class="admin-grid">
+              ${state.roomTypes.map((roomType) => `
+                <article class="admin-card">
+                  <h3>${escapeHTML(roomType.name || `Room Type #${roomType.id}`)}</h3>
+                  <div class="admin-meta">${escapeHTML(roomType.hotel_slug || "")}</div>
+                  <div class="admin-row"><strong>Base Price:</strong> ${escapeHTML(formatAdminMoney(roomType.base_price || 0))}</div>
+                  <div class="admin-row"><strong>Adults:</strong> ${escapeHTML(roomType.max_adults ?? "")}</div>
+                  <div class="admin-row"><strong>Children:</strong> ${escapeHTML(roomType.max_children ?? "")}</div>
+                  <div class="admin-row"><strong>Description:</strong> ${escapeHTML(roomType.description || "")}</div>
+                  <div class="admin-row admin-state-line">
+                    <strong>Status:</strong>
+                    <div class="admin-state-list">
+                      ${buildBooleanStateBadge(roomType.is_active !== false, {
+                        onLabel: "Active",
+                        offLabel: "Inactive",
+                        onTone: "success",
+                        offTone: "danger"
+                      })}
+                    </div>
+                  </div>
+                  ${buildAdminRoomTypeControls(roomType)}
+                </article>
+              `).join("")}
+            </div>`
+          : `<p class="empty-state">No room types found.</p>`
+      }
+    </div>
+  `;
+}
+
 async function updateStatus(type, id, status) {
   await fetchJson(`${API_BASE}/${type}/${id}/status`, {
     method: "PATCH",
@@ -3131,10 +5321,35 @@ function bindTabs() {
   const tabs = [...document.querySelectorAll(".admin-tab[data-tab]")];
   tabs.forEach((tab) => {
     tab.addEventListener("click", async () => {
-      tabs.forEach((btn) => btn.classList.remove("active"));
-      tab.classList.add("active");
+      tabs.forEach((btn) => {
+        const isSelected = btn === tab;
+        btn.classList.toggle("active", isSelected);
+        btn.setAttribute("aria-selected", isSelected ? "true" : "false");
+        btn.tabIndex = isSelected ? 0 : -1;
+      });
       state.activeTab = tab.dataset.tab;
       await loadTabData();
+    });
+
+    tab.addEventListener("keydown", (event) => {
+      const currentIndex = tabs.indexOf(tab);
+      let nextIndex = currentIndex;
+
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        nextIndex = (currentIndex + 1) % tabs.length;
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = tabs.length - 1;
+      } else {
+        return;
+      }
+
+      event.preventDefault();
+      tabs[nextIndex].focus();
+      tabs[nextIndex].click();
     });
   });
 }
@@ -3145,9 +5360,18 @@ function bindHotelFilter() {
 
   select.addEventListener("change", async () => {
     syncMenuFormHotelSlug({ force: true });
+    syncMenuComboFormHotelSlug({ force: true });
     syncGalleryFormHotelSlug({ force: true });
-    syncNotificationSettingsHotelSlug();
+    syncPopupNotificationFormHotelSlug({ force: true });
+    syncNotificationSettingsHotelSlug({ force: true });
+    syncOrderingSettingsHotelSlug({ force: true });
+    syncRoomFeatureSettingsHotelSlug({ force: true });
+    syncPaymentRouteSettingsHotelSlug({ force: true });
     syncQrTableLinkHotelSlug({ force: true });
+    syncRoomTypeFormHotelSlug({ force: true });
+    syncRoomFormHotelSlug({ force: true });
+    syncRoomBookingFormHotelSlug({ force: true });
+    await loadRoomBookingRoomOptions();
     await loadTabData();
   });
 }
@@ -3182,6 +5406,57 @@ function bindListFilters() {
         }
       }
     }
+  });
+}
+
+function bindRoomBookingFilters() {
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || form.id !== "roomBookingFiltersForm") {
+      return;
+    }
+
+    event.preventDefault();
+
+    const formData = new FormData(form);
+    const status = String(formData.get("status") || "");
+    const fromDate = String(formData.get("fromDate") || "");
+    const toDate = String(formData.get("toDate") || "");
+    const limit = String(formData.get("limit") || "100");
+    const numericLimit = Number(limit);
+
+    if (fromDate && toDate && toDate < fromDate) {
+      alert("Check-in To date must be after Check-in From date.");
+      return;
+    }
+
+    if (!Number.isInteger(numericLimit) || numericLimit < 1 || numericLimit > 200) {
+      alert("Booking list limit must be between 1 and 200.");
+      return;
+    }
+
+    state.roomBookingFilters = {
+      status,
+      fromDate,
+      toDate,
+      limit
+    };
+
+    await loadTabData();
+  });
+
+  document.addEventListener("click", async (event) => {
+    const resetButton = event.target.closest("[data-reset-room-booking-filters]");
+    if (!resetButton) return;
+
+    state.roomBookingFilters = {
+      status: "",
+      fromDate: "",
+      toDate: "",
+      limit: "100"
+    };
+
+    await loadTabData();
   });
 }
 
@@ -3232,6 +5507,316 @@ function bindStatusActions() {
       btn.disabled = false;
       btn.textContent = "Update Status";
     }
+  });
+
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-update-room-booking-status]");
+    if (!btn) return;
+
+    const bookingId = btn.dataset.id || "";
+    const select = findAdminElementByDataId(".room-booking-status-select", bookingId);
+
+    if (!bookingId || !select) return;
+
+    const nextStatus = select.value;
+    const hotelSlug = select.dataset.hotelSlug || "";
+
+    try {
+      btn.disabled = true;
+      btn.textContent = "Updating...";
+
+      await updateAdminRoomBookingStatus(bookingId, {
+        hotelSlug,
+        bookingStatus: nextStatus
+      });
+      await loadTabData();
+    } catch (error) {
+      console.error("Room booking status update failed:", error);
+      alert(error.message || "Failed to update room booking status");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Update Booking Status";
+    }
+  });
+
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-update-room-inventory]");
+    if (!btn) return;
+
+    const roomId = btn.dataset.id || "";
+    const statusSelect = findAdminElementByDataId(
+      ".room-inventory-status-select",
+      roomId
+    );
+    const activeSelect = findAdminElementByDataId(
+      ".room-inventory-active-select",
+      roomId
+    );
+    const basePriceInput = findAdminElementByDataId(
+      ".room-inventory-base-price",
+      roomId
+    );
+    const discountPriceInput = findAdminElementByDataId(
+      ".room-inventory-discount-price",
+      roomId
+    );
+    const taxPercentInput = findAdminElementByDataId(
+      ".room-inventory-tax-percent",
+      roomId
+    );
+
+    if (!roomId || !statusSelect || !activeSelect || !basePriceInput || !taxPercentInput) return;
+
+    const nextStatus = statusSelect.value || "available";
+    const nextIsActive = activeSelect.value === "true";
+    const basePrice = Number(basePriceInput.value || 0);
+    const discountPrice =
+      discountPriceInput && discountPriceInput.value.trim() !== ""
+        ? Number(discountPriceInput.value)
+        : null;
+    const taxPercent = Number(taxPercentInput.value || 0);
+    const removesFromAvailability =
+      !nextIsActive || ["maintenance", "inactive"].includes(nextStatus);
+
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      alert("Enter a valid base price.");
+      return;
+    }
+
+    if (discountPrice !== null && (!Number.isFinite(discountPrice) || discountPrice < 0)) {
+      alert("Enter a valid discount price, or leave it blank.");
+      return;
+    }
+
+    if (!Number.isFinite(taxPercent) || taxPercent < 0 || taxPercent > 100) {
+      alert("Tax/GST percent must be between 0 and 100.");
+      return;
+    }
+
+    if (discountPrice !== null && discountPrice > basePrice) {
+      alert("Discount price should not be greater than base price.");
+      return;
+    }
+
+    if (
+      removesFromAvailability &&
+      !window.confirm(
+        "This change will remove the room from public availability. Continue?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      btn.disabled = true;
+      btn.textContent = "Updating...";
+
+      await updateAdminRoom(roomId, {
+        status: nextStatus,
+        isActive: nextIsActive,
+        basePrice,
+        discountPrice,
+        taxPercent
+      });
+      await loadTabData();
+    } catch (error) {
+      console.error("Room inventory update failed:", error);
+      alert(error.message || "Failed to update room inventory");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Update Room";
+    }
+  });
+
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-update-room-type]");
+    if (!btn) return;
+
+    const roomTypeId = btn.dataset.id || "";
+    const basePriceInput = findAdminElementByDataId(".room-type-base-price", roomTypeId);
+    const maxAdultsInput = findAdminElementByDataId(".room-type-max-adults", roomTypeId);
+    const maxChildrenInput = findAdminElementByDataId(".room-type-max-children", roomTypeId);
+    const activeSelect = findAdminElementByDataId(".room-type-active-select", roomTypeId);
+
+    if (!roomTypeId || !basePriceInput || !maxAdultsInput || !maxChildrenInput || !activeSelect) {
+      return;
+    }
+
+    const basePrice = Number(basePriceInput.value || 0);
+    const maxAdults = Number(maxAdultsInput.value || 0);
+    const maxChildren = Number(maxChildrenInput.value || 0);
+    const isActive = activeSelect.value === "true";
+
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      alert("Enter a valid room type base price.");
+      return;
+    }
+
+    if (
+      !Number.isInteger(maxAdults) ||
+      maxAdults < 0 ||
+      maxAdults > 100 ||
+      !Number.isInteger(maxChildren) ||
+      maxChildren < 0 ||
+      maxChildren > 100
+    ) {
+      alert("Room type guest limits must be whole numbers between 0 and 100.");
+      return;
+    }
+
+    if (!isActive && !window.confirm("Deactivate this room type? Existing rooms remain unchanged.")) {
+      return;
+    }
+
+    try {
+      btn.disabled = true;
+      btn.textContent = "Updating...";
+
+      await updateAdminRoomType(roomTypeId, {
+        basePrice,
+        maxAdults,
+        maxChildren,
+        isActive
+      });
+      await loadTabData();
+    } catch (error) {
+      console.error("Room type update failed:", error);
+      alert(error.message || "Failed to update room type");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Update Room Type";
+    }
+  });
+
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-record-room-booking-payment]");
+    if (!btn) return;
+
+    const bookingId = btn.dataset.id || "";
+    const hotelSlug = btn.dataset.hotelSlug || "";
+    const amountInput = findAdminElementByDataId(".room-booking-payment-amount", bookingId);
+    const methodSelect = findAdminElementByDataId(".room-booking-payment-method", bookingId);
+    const transactionInput = findAdminElementByDataId(
+      ".room-booking-payment-transaction",
+      bookingId
+    );
+
+    if (!bookingId || !amountInput || !methodSelect) return;
+
+    const amount = Number(amountInput.value || 0);
+    const maxAmount = Number(amountInput.max || 0);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("Enter a valid room payment amount.");
+      return;
+    }
+
+    if (Number.isFinite(maxAmount) && maxAmount > 0 && amount > maxAmount) {
+      alert("Payment amount cannot be greater than the current room booking balance.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Record ${formatAdminMoney(amount)} payment for room booking #${bookingId}?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      btn.disabled = true;
+      btn.textContent = "Recording...";
+      const idempotencyKey = btn.dataset.paymentRequestId ||
+        `room-payment-${bookingId}-${window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+      btn.dataset.paymentRequestId = idempotencyKey;
+
+      await recordAdminRoomBookingPayment(bookingId, {
+        hotelSlug,
+        amount,
+        paymentMethod: methodSelect.value,
+        paymentStatus: "paid",
+        transactionId: transactionInput?.value.trim() || "",
+        idempotencyKey
+      });
+      delete btn.dataset.paymentRequestId;
+      await loadTabData();
+    } catch (error) {
+      console.error("Room booking payment failed:", error);
+      alert(error.message || "Failed to record room booking payment");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Record Payment";
+    }
+  });
+
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-view-room-checkout-summary]");
+    if (!btn) return;
+
+    const bookingId = String(btn.dataset.id || "").trim();
+    const hotelSlug = String(btn.dataset.hotelSlug || "").trim();
+    const card = btn.closest("article.admin-card");
+    const target = card?.querySelector("[data-room-checkout-summary]");
+
+    if (!bookingId || !hotelSlug || !target) return;
+
+    try {
+      btn.disabled = true;
+      btn.textContent = "Loading...";
+      target.hidden = false;
+      target.innerHTML = '<p class="admin-field-hint">Loading checkout summary...</p>';
+
+      const result = await fetchAdminRoomCheckoutSummary(bookingId, hotelSlug);
+      const summary = {
+        ...(result.summary || state.roomCheckoutSummaries?.[bookingId] || {}),
+        hotelSlug: result.hotelSlug || hotelSlug
+      };
+      const bill = result.bill || {};
+      state.roomCheckoutSummaries = {
+        ...state.roomCheckoutSummaries,
+        [bookingId]: summary
+      };
+      state.roomCheckoutBills = {
+        ...state.roomCheckoutBills,
+        [bookingId]: bill
+      };
+      target.innerHTML = buildAdminRoomCheckoutSummaryMarkup(summary, bill);
+    } catch (error) {
+      console.error("Admin room checkout summary fetch failed:", error);
+      target.innerHTML = `<p class="admin-field-hint">${escapeHTML(error.message || "Failed to load checkout summary.")}</p>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Checkout Summary";
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-print-room-checkout-summary]");
+    if (!btn) return;
+
+    const bookingId = String(btn.dataset.id || "").trim();
+    const bill = state.roomCheckoutBills?.[bookingId];
+
+    if (!bill) {
+      alert("Load the checkout summary before printing.");
+      return;
+    }
+
+    void fetchJson(
+      `${API_BASE}/room-checkout-bill/bookings/${encodeURIComponent(bookingId)}/audit`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bill_printed" })
+      }
+    ).catch(() => {});
+    openAdminRoomCheckoutInvoice(bill);
+  });
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-finalize-room-combined-checkout]");
+    if (!btn) return;
+
+    void handleAdminRoomCombinedCheckoutButton(btn);
   });
 
   document.addEventListener("click", async (e) => {
@@ -3296,16 +5881,27 @@ function bindStatusActions() {
 function bindFormToggles() {
   const hotelBtn = document.getElementById("openHotelFormBtn");
   const menuBtn = document.getElementById("openMenuFormBtn");
+  const menuComboBtn = document.getElementById("openMenuComboFormBtn");
   const galleryBtn = document.getElementById("openGalleryFormBtn");
+  const popupNotificationBtn = document.getElementById("openPopupNotificationFormBtn");
   const testimonialBtn = document.getElementById("openTestimonialFormBtn");
   const notificationSettingsBtn = document.getElementById(
     "openNotificationSettingsBtn"
+  );
+  const orderingSettingsBtn = document.getElementById(
+    "openOrderingSettingsBtn"
+  );
+  const roomFeatureSettingsBtn = document.getElementById(
+    "openRoomFeatureSettingsBtn"
   );
   const paymentRouteSettingsBtn = document.getElementById(
     "openPaymentRouteSettingsBtn"
   );
   const profileBtn = document.getElementById("openProfileFormBtn");
   const qrTableLinkBtn = document.getElementById("openQrTableLinkBtn");
+  const roomTypeBtn = document.getElementById("openRoomTypeFormBtn");
+  const roomBtn = document.getElementById("openRoomFormBtn");
+  const roomBookingBtn = document.getElementById("openRoomBookingFormBtn");
 
   if (
     notificationSettingsBtn &&
@@ -3335,6 +5931,42 @@ function bindFormToggles() {
       scrollSectionIntoView("notificationSettingsSection");
     });
     notificationSettingsBtn.dataset.boundClick = "true";
+  }
+
+  if (
+    orderingSettingsBtn &&
+    orderingSettingsBtn.dataset.boundClick !== "true"
+  ) {
+    orderingSettingsBtn.addEventListener("click", async () => {
+      syncOrderingSettingsHotelSlug({ force: true });
+      const isVisible = setSectionVisibility("orderingSettingsSection");
+
+      if (!isVisible) return;
+
+      const hotelSlug =
+        document.getElementById("orderingSettingsHotelSlugInput")?.value.trim() || "";
+
+      if (hotelSlug) {
+        try {
+          const result = await fetchOrderingSettings(hotelSlug);
+          fillOrderingSettingsForm(result.settings || {});
+          const help = document.getElementById("orderingSettingsHelp");
+
+          if (help && result.schemaReady === false) {
+            help.textContent =
+              "Run the hotel ordering settings SQL script before saving.";
+          }
+        } catch (error) {
+          console.error("Failed to load ordering settings:", error);
+          alert(error.message || "Failed to load ordering settings");
+        }
+      } else {
+        resetOrderingSettingsForm();
+      }
+
+      scrollSectionIntoView("orderingSettingsSection");
+    });
+    orderingSettingsBtn.dataset.boundClick = "true";
   }
 
   if (
@@ -3373,6 +6005,42 @@ function bindFormToggles() {
     paymentRouteSettingsBtn.dataset.boundClick = "true";
   }
 
+  if (
+    roomFeatureSettingsBtn &&
+    roomFeatureSettingsBtn.dataset.boundClick !== "true"
+  ) {
+    roomFeatureSettingsBtn.addEventListener("click", async () => {
+      syncRoomFeatureSettingsHotelSlug({ force: true });
+      const isVisible = setSectionVisibility("roomFeatureSettingsSection");
+
+      if (!isVisible) return;
+
+      const hotelSlug =
+        document.getElementById("roomFeatureSettingsHotelSlugInput")?.value.trim() || "";
+
+      if (hotelSlug) {
+        try {
+          const result = await fetchRoomFeatureSettings(hotelSlug);
+          fillRoomFeatureSettingsForm(result.settings || {});
+          const help = document.getElementById("roomFeatureSettingsHelp");
+
+          if (help && result.schemaReady === false) {
+            help.textContent =
+              "Run the room booking SQL script before saving feature settings.";
+          }
+        } catch (error) {
+          console.error("Failed to load room feature settings:", error);
+          alert(error.message || "Failed to load room feature settings");
+        }
+      } else {
+        resetRoomFeatureSettingsForm();
+      }
+
+      scrollSectionIntoView("roomFeatureSettingsSection");
+    });
+    roomFeatureSettingsBtn.dataset.boundClick = "true";
+  }
+
   if (profileBtn) {
     profileBtn.addEventListener("click", () => {
       const isVisible = setSectionVisibility("profileFormSection");
@@ -3407,6 +6075,57 @@ function bindFormToggles() {
       const isVisible = setSectionVisibility("menuFormSection");
       if (isVisible) {
         scrollSectionIntoView("menuFormSection");
+      }
+    });
+  }
+
+  if (menuComboBtn) {
+    menuComboBtn.addEventListener("click", () => {
+      syncMenuComboFormHotelSlug({ force: true });
+      const isVisible = setSectionVisibility("menuComboFormSection");
+      if (isVisible) {
+        scrollSectionIntoView("menuComboFormSection");
+      }
+    });
+  }
+
+  if (roomTypeBtn) {
+    roomTypeBtn.addEventListener("click", () => {
+      syncRoomTypeFormHotelSlug({ force: true });
+      const isVisible = setSectionVisibility("roomTypeFormSection");
+      if (isVisible) {
+        scrollSectionIntoView("roomTypeFormSection");
+      }
+    });
+  }
+
+  if (roomBtn) {
+    roomBtn.addEventListener("click", () => {
+      syncRoomFormHotelSlug({ force: true });
+      const isVisible = setSectionVisibility("roomFormSection");
+      if (isVisible) {
+        scrollSectionIntoView("roomFormSection");
+      }
+    });
+  }
+
+  if (roomBookingBtn) {
+    roomBookingBtn.addEventListener("click", async () => {
+      syncRoomBookingFormHotelSlug({ force: true });
+      const isVisible = setSectionVisibility("roomBookingFormSection");
+      if (isVisible) {
+        await loadRoomBookingRoomOptions();
+        scrollSectionIntoView("roomBookingFormSection");
+      }
+    });
+  }
+
+  if (popupNotificationBtn) {
+    popupNotificationBtn.addEventListener("click", () => {
+      syncPopupNotificationFormHotelSlug({ force: true });
+      const isVisible = setSectionVisibility("popupNotificationFormSection");
+      if (isVisible) {
+        scrollSectionIntoView("popupNotificationFormSection");
       }
     });
   }
@@ -3582,6 +6301,48 @@ function bindGalleryUploadHelper() {
   });
 }
 
+function bindMenuComboUploadHelper() {
+  const btn = document.getElementById("menuComboUploadHelperBtn");
+  if (!btn || btn.dataset.boundClick === "true") return;
+
+  btn.addEventListener("click", () => {
+    const hotelSlug =
+      document.getElementById("menuComboHotelSlugInput")?.value.trim() ||
+      getSelectedHotelSlug() ||
+      "shared";
+
+    openUploadSectionWithConfig({
+      hotelSlug,
+      folder: "combos",
+      targetFieldId: "menuComboImageInput",
+      storageTargetFieldId: "menuComboStoragePathInput"
+    });
+  });
+
+  btn.dataset.boundClick = "true";
+}
+
+function bindPopupNotificationUploadHelper() {
+  const btn = document.getElementById("popupNotificationUploadHelperBtn");
+  if (!btn || btn.dataset.boundClick === "true") return;
+
+  btn.addEventListener("click", () => {
+    const hotelSlug =
+      document.getElementById("popupNotificationHotelSlugInput")?.value.trim() ||
+      getSelectedHotelSlug() ||
+      "shared";
+
+    openUploadSectionWithConfig({
+      hotelSlug,
+      folder: "popup-notifications",
+      targetFieldId: "popupNotificationImageUrlInput",
+      storageTargetFieldId: "popupNotificationStoragePathInput"
+    });
+  });
+
+  btn.dataset.boundClick = "true";
+}
+
 function bindProfileAboutImageUploadHelpers() {
   const helperConfigs = [
     {
@@ -3665,8 +6426,125 @@ async function createMenuItem(payload) {
   });
 }
 
+async function createMenuCombo(payload) {
+  return fetchJson(`${API_BASE}/menu-combos`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function createRoomType(payload) {
+  return fetchJson(`${API_BASE}/room-booking/room-types`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function updateAdminRoomType(id, payload) {
+  return fetchJson(`${API_BASE}/room-booking/room-types/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function createRoom(payload) {
+  return fetchJson(`${API_BASE}/room-booking/rooms`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function updateAdminRoom(id, payload) {
+  return fetchJson(`${API_BASE}/room-booking/rooms/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function fetchAdminRoomAdvancePolicy(hotelSlug = "") {
+  if (!hotelSlug) return null;
+  return fetchJson(`${API_BASE}/room-booking/advance-policy/${encodeURIComponent(hotelSlug)}`);
+}
+
+function applyAdminRoomAdvancePaymentMethods(policy = {}) {
+  const allowed = new Set(policy.allowedPaymentMethods || ["cash", "upi", "card", "bank_transfer"]);
+  ["roomBookingPaymentMethodInput", "roomBookingSplitMethodInput"].forEach((id) => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    [...select.options].forEach((option) => {
+      if (!option.value) return;
+      const permitted = allowed.has(option.value);
+      option.disabled = !permitted;
+      option.hidden = !permitted;
+    });
+    if (select.value && !allowed.has(select.value)) select.value = "";
+  });
+}
+
+async function createAdminRoomBooking(payload, idempotencyKey = "") {
+  return fetchJson(`${API_BASE}/room-booking/bookings`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function updateAdminRoomBookingStatus(id, payload) {
+  return fetchJson(`${API_BASE}/room-booking/bookings/${encodeURIComponent(id)}/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function recordAdminRoomBookingPayment(id, payload) {
+  return fetchJson(`${API_BASE}/room-booking/bookings/${encodeURIComponent(id)}/payments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function fetchAdminRoomCheckoutSummary(id, hotelSlug) {
+  return fetchJson(
+    `${API_BASE}/room-checkout-bill/bookings/${encodeURIComponent(id)}`
+  );
+}
+
 async function updateMenuItem(id, payload) {
   return fetchJson(`${API_BASE}/menu-items/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function updateMenuCombo(id, payload) {
+  return fetchJson(`${API_BASE}/menu-combos/${id}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json"
@@ -3685,8 +6563,28 @@ async function createGalleryItem(payload) {
   });
 }
 
+async function createPopupNotification(payload) {
+  return fetchJson(`${API_BASE}/popup-notifications`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
 async function updateGalleryItem(id, payload) {
   return fetchJson(`${API_BASE}/gallery-items/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function updatePopupNotification(id, payload) {
+  return fetchJson(`${API_BASE}/popup-notifications/${id}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json"
@@ -3777,7 +6675,11 @@ function bindHotelForm() {
 
       resetHotelForm();
       syncMenuFormHotelSlug({ force: true });
+      syncMenuComboFormHotelSlug({ force: true });
       syncGalleryFormHotelSlug({ force: true });
+      syncPopupNotificationFormHotelSlug({ force: true });
+      syncRoomTypeFormHotelSlug({ force: true });
+      syncRoomFormHotelSlug({ force: true });
       await loadTabData();
     } catch (error) {
       console.error("Hotel form submit failed:", error);
@@ -3847,6 +6749,443 @@ function bindMenuItemForm() {
   });
 }
 
+function bindMenuComboForm() {
+  const form = document.getElementById("menuComboForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const submitButton = e.submitter || form.querySelector('button[type="submit"]');
+    const id = document.getElementById("menuComboDbId")?.value.trim();
+    const childItems = parseMenuComboChildItemsInput(
+      document.getElementById("menuComboChildItemsInput")?.value || ""
+    );
+
+    if (!childItems.length) {
+      alert("Add at least one child item line for this combo.");
+      return;
+    }
+
+    if (
+      childItems.some(
+        (childItem) =>
+          !childItem.childItemId ||
+          !Number.isFinite(childItem.quantity) ||
+          childItem.quantity <= 0 ||
+          !Number.isFinite(childItem.sortOrder) ||
+          childItem.sortOrder < 0
+      )
+    ) {
+      alert("Each child item line must use child_item_id|quantity|sort_order with valid numbers.");
+      return;
+    }
+
+    const payload = {
+      hotelSlug: document.getElementById("menuComboHotelSlugInput")?.value.trim(),
+      category: document.getElementById("menuComboCategoryInput")?.value.trim(),
+      itemId: document.getElementById("menuComboItemIdInput")?.value.trim(),
+      name: document.getElementById("menuComboNameInput")?.value.trim(),
+      description: document.getElementById("menuComboDescriptionInput")?.value.trim(),
+      price: Number(document.getElementById("menuComboPriceInput")?.value || 0),
+      image: document.getElementById("menuComboImageInput")?.value.trim(),
+      alt: document.getElementById("menuComboAltInput")?.value.trim(),
+      badge: document.getElementById("menuComboBadgeInput")?.value.trim(),
+      tag: document.getElementById("menuComboTagInput")?.value.trim(),
+      sortOrder: Number(document.getElementById("menuComboSortOrderInput")?.value || 0),
+      isAvailable: !!document.getElementById("menuComboIsAvailableInput")?.checked,
+      childItems,
+      startDate: document.getElementById("menuComboStartDateInput")?.value.trim(),
+      endDate: document.getElementById("menuComboEndDateInput")?.value.trim(),
+      startTime: document.getElementById("menuComboStartTimeInput")?.value.trim(),
+      endTime: document.getElementById("menuComboEndTimeInput")?.value.trim()
+    };
+
+    try {
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = id ? "Updating combo offer..." : "Creating combo offer...";
+      }
+
+      if (id) {
+        await updateMenuCombo(id, payload);
+        alert("Combo offer updated successfully");
+      } else {
+        await createMenuCombo(payload);
+        alert("Combo offer created successfully");
+      }
+
+      resetMenuComboForm();
+
+      if (state.activeTab === "menu-combos") {
+        await loadTabData();
+      }
+    } catch (error) {
+      console.error("Combo form submit failed:", error);
+      alert(error.message || "Failed to save combo offer");
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Save Combo Offer";
+      }
+    }
+  });
+}
+
+function bindRoomTypeForm() {
+  const form = document.getElementById("roomTypeForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const submitButton = e.submitter || form.querySelector('button[type="submit"]');
+    const help = document.getElementById("roomTypeFormHelp");
+
+    try {
+      const payload = {
+        hotelSlug: document.getElementById("roomTypeHotelSlugInput")?.value.trim(),
+        name: document.getElementById("roomTypeNameInput")?.value.trim(),
+        description: document.getElementById("roomTypeDescriptionInput")?.value.trim(),
+        basePrice: getOptionalNumericInput("roomTypeBasePriceInput"),
+        maxAdults: getOptionalNumericInput("roomTypeMaxAdultsInput", {
+          integer: true,
+          max: 100
+        }),
+        maxChildren: getOptionalNumericInput("roomTypeMaxChildrenInput", {
+          integer: true,
+          max: 100
+        }),
+        amenities: parseRoomListInput(
+          document.getElementById("roomTypeAmenitiesInput")?.value || ""
+        ),
+        images: parseRoomListInput(
+          document.getElementById("roomTypeImagesInput")?.value || ""
+        ),
+        cancellationPolicy:
+          document.getElementById("roomTypeCancellationPolicyInput")?.value.trim(),
+        isActive: !!document.getElementById("roomTypeIsActiveInput")?.checked
+      };
+
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Creating room type...";
+      }
+
+      await createRoomType(payload);
+      if (help) help.textContent = "Room type saved successfully.";
+      alert("Room type created successfully");
+
+      resetRoomTypeForm();
+
+      if (state.activeTab === "rooms") {
+        await loadTabData();
+      }
+    } catch (error) {
+      console.error("Room type form submit failed:", error);
+      if (help) help.textContent = error.message || "Failed to save room type.";
+      alert(error.message || "Failed to save room type");
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Save Room Type";
+      }
+    }
+  });
+}
+
+function bindRoomForm() {
+  const form = document.getElementById("roomForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const submitButton = e.submitter || form.querySelector('button[type="submit"]');
+    const help = document.getElementById("roomFormHelp");
+
+    try {
+      const payload = {
+        hotelSlug: document.getElementById("roomHotelSlugInput")?.value.trim(),
+        roomTypeId: getOptionalNumericInput("roomRoomTypeIdInput", {
+          integer: true,
+          min: 1
+        }),
+        roomNumber: document.getElementById("roomNumberInput")?.value.trim(),
+        floor: document.getElementById("roomFloorInput")?.value.trim(),
+        title: document.getElementById("roomTitleInput")?.value.trim(),
+        capacity: getOptionalNumericInput("roomCapacityInput", {
+          integer: true,
+          max: 200
+        }),
+        maxAdults: getOptionalNumericInput("roomMaxAdultsInput", {
+          integer: true,
+          max: 100
+        }),
+        maxChildren: getOptionalNumericInput("roomMaxChildrenInput", {
+          integer: true,
+          max: 100
+        }),
+        bedType: document.getElementById("roomBedTypeInput")?.value.trim(),
+        basePrice: getOptionalNumericInput("roomBasePriceInput"),
+        discountPrice: getOptionalNumericInput("roomDiscountPriceInput"),
+        taxPercent: getOptionalNumericInput("roomTaxPercentInput", {
+          max: 100
+        }),
+        status: document.getElementById("roomStatusInput")?.value || "available",
+        amenities: parseRoomListInput(document.getElementById("roomAmenitiesInput")?.value || ""),
+        images: parseRoomListInput(document.getElementById("roomImagesInput")?.value || ""),
+        description: document.getElementById("roomDescriptionInput")?.value.trim(),
+        isActive: !!document.getElementById("roomIsActiveInput")?.checked
+      };
+
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Creating room...";
+      }
+
+      await createRoom(payload);
+      if (help) help.textContent = "Room saved successfully.";
+      alert("Room created successfully");
+
+      resetRoomForm();
+
+      if (state.activeTab === "rooms") {
+        await loadTabData();
+      }
+    } catch (error) {
+      console.error("Room form submit failed:", error);
+      if (help) help.textContent = error.message || "Failed to save room.";
+      alert(error.message || "Failed to save room");
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Save Room";
+      }
+    }
+  });
+}
+
+const ROOM_BOOKING_CONFLICT_CODE = "ROOM_ALREADY_BOOKED";
+const ROOM_BOOKING_CONFLICT_MESSAGE =
+  "This room is already booked for selected dates. Please choose another room or date.";
+
+function getAdminRoomBookingErrorMessage(error, fallback = "Failed to create manual booking.") {
+  return error?.code === ROOM_BOOKING_CONFLICT_CODE
+    ? ROOM_BOOKING_CONFLICT_MESSAGE
+    : error?.message || fallback;
+}
+
+function syncAdminRoomAdvanceFields() {
+  const option = document.getElementById("roomBookingAdvanceOptionInput")?.value || "no_advance";
+  const amountField = document.getElementById("roomBookingAdvanceAmountField");
+  const methodField = document.getElementById("roomBookingPaymentMethodField");
+  const amountInput = document.getElementById("roomBookingAdvanceInput");
+  const methodInput = document.getElementById("roomBookingPaymentMethodInput");
+  const splitFields = [...document.querySelectorAll(".room-advance-split-field")];
+  const summary = document.getElementById("roomBookingAdvanceSummary");
+  const needsAmount = ["partial", "split"].includes(option);
+  const needsMethod = option !== "no_advance";
+  if (amountField) amountField.hidden = !needsAmount;
+  if (methodField) methodField.hidden = !needsMethod;
+  splitFields.forEach((field) => { field.hidden = option !== "split"; });
+  if (amountInput) {
+    amountInput.required = needsAmount;
+    amountInput.disabled = !needsAmount;
+    if (!needsAmount) amountInput.value = "";
+  }
+  if (methodInput) {
+    methodInput.required = needsMethod;
+    methodInput.disabled = !needsMethod;
+    if (!needsMethod) methodInput.value = "";
+  }
+  if (summary) {
+    summary.textContent = option === "no_advance"
+      ? "No payment will be collected during booking creation."
+      : option === "full"
+        ? "The backend will collect the exact verified booking total."
+        : option === "split"
+          ? "Both method lines must be positive; the backend verifies their sum against the booking total."
+          : "The backend will verify this partial amount against the booking total and hotel policy.";
+  }
+}
+
+function getAdminRoomAdvancePayloadFromForm() {
+  const option = document.getElementById("roomBookingAdvanceOptionInput")?.value || "no_advance";
+  if (option === "no_advance") return { advanceOption: option };
+  const paymentMethod = document.getElementById("roomBookingPaymentMethodInput")?.value || "";
+  if (!paymentMethod) throw new Error("Select an advance payment method.");
+  if (option === "full") return { advanceOption: option, paymentMethod };
+  const amount = Number(document.getElementById("roomBookingAdvanceInput")?.value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Enter an advance amount greater than zero.");
+  }
+  if (option === "partial") {
+    return { advanceOption: option, advanceAmount: amount, paymentMethod };
+  }
+  const secondAmount = Number(document.getElementById("roomBookingSplitAmountInput")?.value || 0);
+  const secondMethod = document.getElementById("roomBookingSplitMethodInput")?.value || "";
+  if (!Number.isFinite(secondAmount) || secondAmount <= 0 || !secondMethod) {
+    throw new Error("Enter a positive second amount and select its payment method.");
+  }
+  return {
+    advanceOption: "split",
+    advancePayments: [
+      { amount, paymentMethod },
+      { amount: secondAmount, paymentMethod: secondMethod }
+    ]
+  };
+}
+
+function bindRoomBookingForm() {
+  const form = document.getElementById("roomBookingForm");
+  if (!form) return;
+
+  const hotelSlugInput = document.getElementById("roomBookingHotelSlugInput");
+  const checkInInput = document.getElementById("roomBookingCheckInInput");
+  const checkOutInput = document.getElementById("roomBookingCheckOutInput");
+  const checkAvailabilityButton = document.getElementById("roomBookingCheckAvailabilityBtn");
+  const advanceOptionInput = document.getElementById("roomBookingAdvanceOptionInput");
+  if (advanceOptionInput && advanceOptionInput.dataset.boundAdvance !== "true") {
+    advanceOptionInput.addEventListener("change", syncAdminRoomAdvanceFields);
+    advanceOptionInput.dataset.boundAdvance = "true";
+    syncAdminRoomAdvanceFields();
+  }
+
+  const formatDateInput = (date) => {
+    const value = date instanceof Date ? date : new Date(date);
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  if (checkInInput && checkOutInput && checkInInput.dataset.boundCheckoutMin !== "true") {
+    checkInInput.addEventListener("change", () => {
+      if (!checkInInput.value) return;
+
+      const checkInDate = new Date(`${checkInInput.value}T00:00:00`);
+      checkInDate.setDate(checkInDate.getDate() + 1);
+      const nextCheckout = formatDateInput(checkInDate);
+      checkOutInput.min = nextCheckout;
+
+      if (!checkOutInput.value || checkOutInput.value <= checkInInput.value) {
+        checkOutInput.value = nextCheckout;
+      }
+    });
+    checkInInput.dataset.boundCheckoutMin = "true";
+  }
+
+  if (hotelSlugInput && hotelSlugInput.dataset.boundRoomLoad !== "true") {
+    hotelSlugInput.addEventListener("change", async () => {
+      await loadRoomBookingRoomOptions();
+      try {
+        const result = await fetchAdminRoomAdvancePolicy(hotelSlugInput.value.trim());
+        applyAdminRoomAdvancePaymentMethods(result?.policy || {});
+      } catch (error) {
+        console.error("Room advance policy load failed:", error);
+        applyAdminRoomAdvancePaymentMethods({});
+      }
+    });
+    hotelSlugInput.dataset.boundRoomLoad = "true";
+  }
+
+  if (checkAvailabilityButton && checkAvailabilityButton.dataset.boundClick !== "true") {
+    checkAvailabilityButton.addEventListener("click", async () => {
+      checkAvailabilityButton.disabled = true;
+      checkAvailabilityButton.textContent = "Checking...";
+      try {
+        await loadRoomBookingAvailableRoomOptions();
+      } finally {
+        checkAvailabilityButton.disabled = false;
+        checkAvailabilityButton.textContent = "Check Available Rooms";
+      }
+    });
+    checkAvailabilityButton.dataset.boundClick = "true";
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const submitButton = e.submitter || form.querySelector('button[type="submit"]');
+    const help = document.getElementById("roomBookingFormHelp");
+
+    try {
+      const checkInDate =
+        document.getElementById("roomBookingCheckInInput")?.value.trim() || "";
+      const checkOutDate =
+        document.getElementById("roomBookingCheckOutInput")?.value.trim() || "";
+
+      if (!checkInDate || !checkOutDate || checkOutDate <= checkInDate) {
+        throw new Error("Check-out date must be after check-in date.");
+      }
+
+      const payload = {
+        hotelSlug: document.getElementById("roomBookingHotelSlugInput")?.value.trim(),
+        roomId: getOptionalNumericInput("roomBookingRoomIdInput", {
+          integer: true,
+          min: 1
+        }),
+        guestName: document.getElementById("roomBookingGuestNameInput")?.value.trim(),
+        guestPhone: document.getElementById("roomBookingGuestPhoneInput")?.value.trim(),
+        guestEmail: document.getElementById("roomBookingGuestEmailInput")?.value.trim(),
+        guestIdProof: document.getElementById("roomBookingGuestIdProofInput")?.value.trim(),
+        checkInDate,
+        checkOutDate,
+        adults: getOptionalNumericInput("roomBookingAdultsInput", {
+          integer: true,
+          max: 100
+        }),
+        children: getOptionalNumericInput("roomBookingChildrenInput", {
+          integer: true,
+          max: 100
+        }),
+        ...getAdminRoomAdvancePayloadFromForm(),
+        bookingStatus: document.getElementById("roomBookingStatusInput")?.value || "confirmed",
+        bookingSource: document.getElementById("roomBookingSourceInput")?.value || "admin",
+        notes: document.getElementById("roomBookingNotesInput")?.value.trim()
+      };
+
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent =
+          payload.advanceOption === "no_advance"
+            ? "Creating booking..."
+            : "Creating booking and recording advance...";
+      }
+
+      form.dataset.roomBookingIdempotencyKey =
+        form.dataset.roomBookingIdempotencyKey ||
+        (window.crypto?.randomUUID?.() || `room-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      const result = await createAdminRoomBooking(payload, form.dataset.roomBookingIdempotencyKey);
+      delete form.dataset.roomBookingIdempotencyKey;
+      if (help) {
+        const summary = result.summary;
+        help.textContent = summary
+          ? `Booking #${result.booking?.id || ""} created. Paid ${formatAdminMoney(summary.paidAmount)}; balance ${formatAdminMoney(summary.balance)}.`
+          : `Booking #${result.booking?.id || ""} created. Amount and balance were calculated on the backend.`;
+      }
+      alert("Manual room booking created successfully");
+
+      resetRoomBookingForm();
+
+      if (state.activeTab === "rooms") {
+        await loadTabData();
+      }
+    } catch (error) {
+      console.error("Manual room booking form submit failed:", error);
+      const message = getAdminRoomBookingErrorMessage(error);
+      if (help) help.textContent = message;
+      alert(message);
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Create Manual Booking";
+      }
+    }
+  });
+}
+
 function bindGalleryItemForm() {
   const form = document.getElementById("galleryItemForm");
   if (!form) return;
@@ -3888,11 +7227,73 @@ function bindGalleryItemForm() {
       }
     } catch (error) {
       console.error("Gallery form submit failed:", error);
-      alert("Failed to save gallery item");
+      alert(error.message || "Failed to save gallery item");
     } finally {
       if (submitButton) {
         submitButton.disabled = false;
         submitButton.textContent = "Save Gallery Item";
+      }
+    }
+  });
+}
+
+function bindPopupNotificationForm() {
+  const form = document.getElementById("popupNotificationForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    if (!validatePopupNotificationForm(form)) {
+      return;
+    }
+
+    const submitButton = e.submitter || form.querySelector('button[type="submit"]');
+    const id = document.getElementById("popupNotificationDbId")?.value.trim();
+
+    const payload = {
+      hotelSlug: document.getElementById("popupNotificationHotelSlugInput")?.value.trim(),
+      title: document.getElementById("popupNotificationTitleInput")?.value.trim(),
+      description: document.getElementById("popupNotificationDescriptionInput")?.value.trim(),
+      imageUrl: document.getElementById("popupNotificationImageUrlInput")?.value.trim(),
+      storagePath: document.getElementById("popupNotificationStoragePathInput")?.value.trim(),
+      ctaText: document.getElementById("popupNotificationCtaTextInput")?.value.trim(),
+      ctaLink: document.getElementById("popupNotificationCtaLinkInput")?.value.trim(),
+      displayMode: document.getElementById("popupNotificationDisplayModeInput")?.value.trim() || "once_per_session",
+      priority: Number(document.getElementById("popupNotificationPriorityInput")?.value || 0),
+      startAt: document.getElementById("popupNotificationStartAtInput")?.value.trim(),
+      endAt: document.getElementById("popupNotificationEndAtInput")?.value.trim(),
+      isActive: !!document.getElementById("popupNotificationIsActiveInput")?.checked
+    };
+
+    try {
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = id
+          ? "Updating popup notification..."
+          : "Creating popup notification...";
+      }
+
+      if (id) {
+        await updatePopupNotification(id, payload);
+        alert("Popup notification updated successfully");
+      } else {
+        await createPopupNotification(payload);
+        alert("Popup notification created successfully");
+      }
+
+      resetPopupNotificationForm();
+
+      if (state.activeTab === "popup-notifications") {
+        await loadTabData();
+      }
+    } catch (error) {
+      console.error("Popup notification form submit failed:", error);
+      alert(error.message || "Failed to save popup notification");
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Save Popup Notification";
       }
     }
   });
@@ -3963,6 +7364,18 @@ async function fetchNotificationSettings(slug) {
   );
 }
 
+async function fetchOrderingSettings(slug) {
+  return fetchJson(
+    `${API_BASE}/ordering-settings/${encodeURIComponent(slug)}`
+  );
+}
+
+async function fetchRoomFeatureSettings(slug) {
+  return fetchJson(
+    `${API_BASE}/room-booking/feature-settings/${encodeURIComponent(slug)}`
+  );
+}
+
 async function fetchPaymentRouteSettings(slug) {
   return fetchJson(
     `${API_BASE}/payment-route-settings/${encodeURIComponent(slug)}`
@@ -3982,6 +7395,26 @@ async function saveHotelProfile(payload) {
 async function saveNotificationSettings(payload) {
   return fetchJson(`${API_BASE}/notification-settings`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function saveOrderingSettings(payload) {
+  return fetchJson(`${API_BASE}/ordering-settings`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function saveRoomFeatureSettings(payload) {
+  return fetchJson(`${API_BASE}/room-booking/feature-settings`, {
+    method: "PUT",
     headers: {
       "Content-Type": "application/json"
     },
@@ -5677,10 +9110,16 @@ async function loginAdmin(email, password) {
   return data;
 }
 
+function hideAdminBootStatus() {
+  const bootStatus = document.getElementById("adminBootStatus");
+  if (bootStatus) bootStatus.hidden = true;
+}
+
 function showLoginView() {
   const loginWrap = document.getElementById("adminLoginWrap");
   const dashboardWrap = document.getElementById("adminDashboardWrap");
 
+  hideAdminBootStatus();
   if (loginWrap) loginWrap.style.display = "block";
   if (dashboardWrap) dashboardWrap.style.display = "none";
 }
@@ -5689,6 +9128,7 @@ function showDashboardView() {
   const loginWrap = document.getElementById("adminLoginWrap");
   const dashboardWrap = document.getElementById("adminDashboardWrap");
 
+  hideAdminBootStatus();
   if (loginWrap) loginWrap.style.display = "none";
   if (dashboardWrap) dashboardWrap.style.display = "block";
 }
@@ -5701,17 +9141,26 @@ function bindAdminLoginForm() {
     e.preventDefault();
 
     const email = document.getElementById("adminEmailInput")?.value.trim();
-    const password = document.getElementById("adminPasswordInput")?.value || "";
+    const passwordInput = document.getElementById("adminPasswordInput");
+    const password = passwordInput?.value || "";
+    const status = document.getElementById("adminLoginStatus");
+    const submitButton = form.querySelector('button[type="submit"]');
+
+    if (status) status.textContent = "";
+    if (submitButton) submitButton.disabled = true;
 
     try {
       const result = await loginAdmin(email, password);
       setAdminToken(result.token);
+      if (passwordInput) passwordInput.value = "";
       showDashboardView();
       await loadHotels();
       await loadTabData();
     } catch (error) {
       console.error("Admin login failed:", error);
-      alert(error.message || "Login failed");
+      if (status) status.textContent = error.message || "Login failed";
+    } finally {
+      if (submitButton) submitButton.disabled = false;
     }
   });
 }
@@ -5768,6 +9217,12 @@ const response = await fetch(UPLOAD_API_BASE, {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAdminToken();
+      showLoginView();
+      throw new Error("Admin session expired or missing. Please log in again.");
+    }
+
     throw new Error(data.message || "Upload failed");
   }
 
@@ -5902,6 +9357,188 @@ function bindNotificationSettingsForm() {
   });
 }
 
+function bindOrderingSettingsForm() {
+  const form = document.getElementById("orderingSettingsForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    try {
+      const payload = {
+        hotelSlug:
+          document.getElementById("orderingSettingsHotelSlugInput")?.value.trim() ||
+          "",
+        customerOrderingEnabled:
+          !!document.getElementById("orderingCustomerEnabledInput")?.checked,
+        staffOrderingEnabled:
+          !!document.getElementById("orderingStaffEnabledInput")?.checked,
+        whatsappOrderingEnabled:
+          !!document.getElementById("orderingWhatsappEnabledInput")?.checked,
+        secureOnlinePaymentEnabled:
+          !!document.getElementById("orderingSecureOnlinePaymentEnabledInput")?.checked,
+        cashOnDeliveryEnabled:
+          !!document.getElementById("orderingCashOnDeliveryEnabledInput")?.checked,
+        manualUpiPaymentEnabled:
+          !!document.getElementById("orderingManualUpiPaymentEnabledInput")?.checked,
+        disabledTitle:
+          document.getElementById("orderingDisabledTitleInput")?.value.trim() || "",
+        disabledMessage:
+          document.getElementById("orderingDisabledMessageInput")?.value.trim() || "",
+        disabledButtonText:
+          document.getElementById("orderingDisabledButtonTextInput")?.value.trim() || "",
+        disabledButtonLink:
+          document.getElementById("orderingDisabledButtonLinkInput")?.value.trim() || "",
+        disabledIcon:
+          document.getElementById("orderingDisabledIconInput")?.value.trim() || ""
+      };
+
+      if (!payload.hotelSlug) {
+        alert("Hotel slug is required.");
+        return;
+      }
+
+      if (
+        payload.customerOrderingEnabled &&
+        !payload.secureOnlinePaymentEnabled &&
+        !payload.cashOnDeliveryEnabled &&
+        !payload.manualUpiPaymentEnabled
+      ) {
+        alert("Enable at least one customer payment method while customer ordering is active.");
+        return;
+      }
+
+      if (
+        payload.disabledButtonLink &&
+        !(
+          payload.disabledButtonLink.startsWith("/") ||
+          /^https?:\/\//i.test(payload.disabledButtonLink)
+        )
+      ) {
+        alert("Disabled button link must be an https URL or a relative path like /contact.");
+        return;
+      }
+
+      const result = await saveOrderingSettings(payload);
+      fillOrderingSettingsForm(result.settings || payload);
+      alert("Ordering settings saved successfully.");
+    } catch (error) {
+      console.error("Ordering settings save failed:", error);
+      alert(error.message || "Failed to save ordering settings");
+    }
+  });
+}
+
+function bindRoomFeatureSettingsForm() {
+  const form = document.getElementById("roomFeatureSettingsForm");
+  if (!form) return;
+
+  const businessTypeInput = document.getElementById("hotelBusinessTypeInput");
+  const dependencyInputs = [
+    document.getElementById("hotelFeatureFoodModuleEnabledInput"),
+    document.getElementById("hotelFeatureRoomModuleEnabledInput"),
+    document.getElementById("roomFeatureRoomServiceEnabledInput")
+  ];
+
+  businessTypeInput?.addEventListener("change", () => {
+    syncHotelFeatureDependencies({ fromBusinessType: true });
+  });
+  dependencyInputs.forEach((input) => {
+    input?.addEventListener("change", () => syncHotelFeatureDependencies());
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    try {
+      const payload = {
+        hotelSlug:
+          document.getElementById("roomFeatureSettingsHotelSlugInput")?.value.trim() ||
+          "",
+        enableFoodModule:
+          !!document.getElementById("hotelFeatureFoodModuleEnabledInput")?.checked,
+        enableRoomModule:
+          !!document.getElementById("hotelFeatureRoomModuleEnabledInput")?.checked,
+        enableFoodOrdering:
+          !!document.getElementById("roomFeatureFoodOrderingEnabledInput")?.checked,
+        enableRoomBooking:
+          !!document.getElementById("roomFeatureRoomBookingEnabledInput")?.checked,
+        enableRoomService:
+          !!document.getElementById("roomFeatureRoomServiceEnabledInput")?.checked,
+        enableFoodReports:
+          !!document.getElementById("hotelFeatureFoodReportsEnabledInput")?.checked,
+        enableRoomReports:
+          !!document.getElementById("hotelFeatureRoomReportsEnabledInput")?.checked,
+        enableCombinedReports:
+          !!document.getElementById("hotelFeatureCombinedReportsEnabledInput")?.checked,
+        enableCombinedBilling:
+          !!document.getElementById("hotelFeatureCombinedBillingEnabledInput")?.checked
+      };
+
+      if (!payload.hotelSlug) {
+        alert("Hotel slug is required.");
+        return;
+      }
+
+      if (!payload.enableFoodModule && !payload.enableRoomModule) {
+        alert("Enable at least one core module: Food Operations or Room Operations.");
+        return;
+      }
+
+      if (
+        payload.enableRoomService &&
+        (!payload.enableFoodModule || !payload.enableRoomModule)
+      ) {
+        alert("Room Service requires both Food Operations and Room Operations.");
+        return;
+      }
+
+      if (
+        payload.enableCombinedReports &&
+        (!payload.enableFoodModule || !payload.enableRoomModule)
+      ) {
+        alert("Combined Reports require both Food Operations and Room Operations.");
+        return;
+      }
+
+      if (payload.enableCombinedBilling && !payload.enableRoomService) {
+        alert("Combined Billing requires Room Service.");
+        return;
+      }
+
+      const disablingFood =
+        loadedHotelFeatureSettings?.enableFoodModule === true &&
+        payload.enableFoodModule === false;
+      const disablingRooms =
+        loadedHotelFeatureSettings?.enableRoomModule === true &&
+        payload.enableRoomModule === false;
+
+      if (disablingFood || disablingRooms) {
+        const impacts = [];
+        if (disablingFood) {
+          impacts.push("Food Operations, Take Order, Orders, KDS, Food Billing, Food Reports, and food APIs");
+        }
+        if (disablingRooms) {
+          impacts.push("Room Operations, availability, booking, checkout, Room Reports, and room APIs");
+        }
+
+        const confirmed = window.confirm(
+          `Disable ${disablingFood && disablingRooms ? "these modules" : "this module"}?\n\n${impacts.join("\n")} will be hidden and blocked for this hotel.\n\nHistorical records will not be deleted.`
+        );
+
+        if (!confirmed) return;
+      }
+
+      const result = await saveRoomFeatureSettings(payload);
+      fillRoomFeatureSettingsForm(result.settings || payload);
+      alert("Hotel module settings saved successfully.");
+    } catch (error) {
+      console.error("Hotel module settings save failed:", error);
+      alert(error.message || "Failed to save hotel module settings");
+    }
+  });
+}
+
 function bindPaymentRouteSettingsForm() {
   const form = document.getElementById("paymentRouteSettingsForm");
   if (!form) return;
@@ -5966,6 +9603,22 @@ async function deleteMenuItem(id) {
   });
 }
 
+async function toggleMenuComboActive(id, isAvailable) {
+  return fetchJson(`${API_BASE}/menu-combos/${id}/active`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ isAvailable })
+  });
+}
+
+async function deleteMenuCombo(id) {
+  return fetchJson(`${API_BASE}/menu-combos/${id}`, {
+    method: "DELETE"
+  });
+}
+
 async function deleteGalleryItem(id) {
   return fetchJson(`${API_BASE}/gallery-items/${id}`, {
     method: "DELETE"
@@ -6018,6 +9671,22 @@ async function toggleGalleryActive(id, isActive) {
   });
 }
 
+async function togglePopupNotificationActive(id, isActive) {
+  return fetchJson(`${API_BASE}/popup-notifications/${id}/active`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ isActive })
+  });
+}
+
+async function deletePopupNotification(id) {
+  return fetchJson(`${API_BASE}/popup-notifications/${id}`, {
+    method: "DELETE"
+  });
+}
+
 async function deleteUploadedFile(storagePath) {
   return fetchJson(UPLOAD_API_BASE, {
     method: "DELETE",
@@ -6059,29 +9728,48 @@ async function initAdmin() {
     bindTabs();
     bindHotelFilter();
     bindListFilters();
+    bindRoomBookingFilters();
     bindStatusActions();
     bindFormToggles();
     bindQrTableLinkHelper();
     bindHotelDomainResolveHelper();
     bindGalleryUploadHelper();
+    bindMenuComboUploadHelper();
+    bindPopupNotificationUploadHelper();
     bindProfileAboutImageUploadHelpers();
     bindProfileHeroImageUploadHelper();
     bindHotelForm();
     bindMenuItemForm();
+    bindMenuComboForm();
+    bindRoomTypeForm();
+    bindRoomForm();
+    bindRoomBookingForm();
     bindGalleryItemForm();
+    bindPopupNotificationForm();
+    bindPopupNotificationPreview();
+    bindPopupNotificationValidation();
     bindTestimonialForm();
     bindNotificationSettingsForm();
+    bindOrderingSettingsForm();
+    bindRoomFeatureSettingsForm();
     bindPaymentRouteSettingsForm();
     bindEditActions();
     bindProfileForm();
     bindUploadForm();
     bindUploadedFileDelete();
     syncMenuFormHotelSlug();
+    syncMenuComboFormHotelSlug();
     syncGalleryFormHotelSlug();
+    syncPopupNotificationFormHotelSlug();
     syncTestimonialFormHotelSlug();
     syncNotificationSettingsHotelSlug();
+    syncOrderingSettingsHotelSlug();
+    syncRoomFeatureSettingsHotelSlug();
     syncPaymentRouteSettingsHotelSlug();
     syncQrTableLinkHotelSlug();
+    syncRoomTypeFormHotelSlug();
+    syncRoomFormHotelSlug();
+    syncRoomBookingFormHotelSlug();
     bindAdminLoginForm();
     bindAdminLogout();
 

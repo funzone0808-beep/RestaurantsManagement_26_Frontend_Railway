@@ -40,6 +40,7 @@
     "How do I call staff?"
   ]);
   let refreshTimer = null;
+  let trackingRequestInFlight = false;
   let latestOrder = null;
   let latestStatus = "";
   let hasRenderedFirstOrder = false;
@@ -73,6 +74,18 @@
       ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim()
       : "";
     return text.slice(0, maxLength);
+  }
+
+  function getPublicTrackingMessage(value, fallback = "Unable to load this tracking link.") {
+    const message = normalizeText(value, 1000);
+    if (!message) return fallback;
+
+    const containsInternalDetail =
+      /(?:\bat\s+(?:async\s+)?[\w$.<>]+\s*\(|[a-z]:\\|\/(?:home|var|usr)\/|postgres|supabase|sqlstate|stack\s*trace|jwt[_ -]?secret|service[_ -]?role|api[_ -]?key)/i.test(
+        message
+      );
+
+    return containsInternalDetail ? fallback : message;
   }
 
   function getTrackingContext() {
@@ -832,7 +845,7 @@
       )
       .join("");
     helpers.hidden = !helperActions.length;
-    return renderTrackingAssistantConfirmationPreview(helperActions);
+    renderTrackingAssistantConfirmationPreview(helperActions);
     reply.hidden = false;
   }
 
@@ -1143,6 +1156,7 @@
 
     if (loader) {
       loader.classList.add("hidden");
+      loader.setAttribute("aria-hidden", "true");
     }
   }
 
@@ -1158,7 +1172,8 @@
 
     messageBox.hidden = false;
     messageBox.dataset.type = type;
-    messageBox.textContent = message;
+    messageBox.setAttribute("role", type === "error" ? "alert" : "status");
+    messageBox.textContent = getPublicTrackingMessage(message, "Something went wrong. Please try again.");
   }
 
   function getStatusChangeMessage(previousStatus = "", nextStatus = "") {
@@ -1363,9 +1378,56 @@
 
       detail.appendChild(name);
       detail.appendChild(qty);
+      appendTrackingItemMetaLines(detail, item);
       row.appendChild(detail);
       row.appendChild(amount);
       container.appendChild(row);
+    });
+  }
+
+  function buildTrackingComboSummary(item = {}) {
+    if (String(item?.itemType || "single").trim() !== "combo") {
+      return "";
+    }
+
+    return (Array.isArray(item?.comboItems) ? item.comboItems : [])
+      .map((comboItem) => {
+        const quantity = Number(comboItem?.quantity || 1);
+        const comboItemName = String(comboItem?.name || comboItem?.itemId || "").trim();
+        return comboItemName ? `${quantity}x ${comboItemName}` : "";
+      })
+      .filter(Boolean)
+      .join(" + ");
+  }
+
+  function getTrackingItemMetaLines(item = {}) {
+    const lines = [];
+    const comboSummary = buildTrackingComboSummary(item);
+    const originalPrice = Number(item?.originalPrice || 0);
+    const savings = Number(item?.savings || 0);
+    const price = Number(item?.price || 0);
+
+    if (comboSummary) {
+      lines.push(`Includes: ${comboSummary}`);
+    }
+
+    if (
+      String(item?.itemType || "single").trim() === "combo" &&
+      originalPrice > price &&
+      savings > 0
+    ) {
+      lines.push(`Was ${formatMoney(originalPrice)} | Save ${formatMoney(savings)}`);
+    }
+
+    return lines;
+  }
+
+  function appendTrackingItemMetaLines(container, item = {}) {
+    getTrackingItemMetaLines(item).forEach((line) => {
+      const meta = document.createElement("span");
+      meta.className = "tracking-item-meta";
+      meta.textContent = line;
+      container.appendChild(meta);
     });
   }
 
@@ -1385,13 +1447,20 @@
       const row = document.createElement("div");
       row.className = "tracking-addon-item";
 
-      const name = document.createElement("span");
+      const detail = document.createElement("div");
+      const name = document.createElement("strong");
+      const qty = document.createElement("span");
       const amount = document.createElement("strong");
+      detail.className = "tracking-addon-item__detail";
 
-      name.textContent = `${item.name || "Menu item"} x${Number(item.qty || 0)}`;
+      name.textContent = item.name || "Menu item";
+      qty.textContent = `Qty ${Number(item.qty || 0)}`;
       amount.textContent = formatMoney(item.lineTotal || Number(item.price || 0) * Number(item.qty || 0));
 
-      row.appendChild(name);
+      detail.appendChild(name);
+      detail.appendChild(qty);
+      appendTrackingItemMetaLines(detail, item);
+      row.appendChild(detail);
       row.appendChild(amount);
       container.appendChild(row);
     });
@@ -1465,6 +1534,7 @@
 
       detail.appendChild(name);
       detail.appendChild(qty);
+      appendTrackingItemMetaLines(detail, item);
       row.appendChild(detail);
       row.appendChild(amount);
       container.appendChild(row);
@@ -1661,6 +1731,9 @@
   }
 
   async function loadTracking({ silent = false } = {}) {
+    if (trackingRequestInFlight) return;
+    trackingRequestInFlight = true;
+
     try {
       setLoading(true);
       if (silent) {
@@ -1674,7 +1747,10 @@
       clearSmartWaiterTrackingContext();
       hideTrackingAssistant();
       if (!silent) {
-        setMessage(error.message || "Unable to load this tracking link.", "error");
+        setMessage(
+          getPublicTrackingMessage(error.message, "Unable to load this tracking link."),
+          "error"
+        );
         updateStatusBadge({ status: "error" });
         setText("#trackingStatusBadge", "Unavailable");
       } else {
@@ -1684,6 +1760,7 @@
         );
       }
     } finally {
+      trackingRequestInFlight = false;
       setLoading(false);
       markAppReady();
     }
@@ -1693,6 +1770,9 @@
     stopAutoRefresh();
 
     refreshTimer = window.setInterval(() => {
+      if (document.visibilityState !== "visible" || isClosedTrackingStatus(latestOrder?.status)) {
+        return;
+      }
       void loadTracking({ silent: true });
     }, REFRESH_INTERVAL_MS);
   }
@@ -1731,6 +1811,12 @@
         );
       });
     }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && !isClosedTrackingStatus(latestOrder?.status)) {
+        void loadTracking({ silent: true });
+      }
+    });
 
     window.addEventListener("beforeunload", () => {
       stopAutoRefresh();

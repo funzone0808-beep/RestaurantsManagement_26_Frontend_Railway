@@ -1,0 +1,207 @@
+.professional-room-columns,
+.professional-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.professional-config-grid {
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+}
+
+.professional-config-card,
+.professional-room-card,
+.professional-room-list > article,
+.professional-room-list > section {
+  padding: 1rem;
+  border: 1px solid var(--staff-border);
+  border-radius: 18px;
+  background: var(--staff-panel-strong);
+  box-shadow: 0 12px 30px rgba(78, 50, 31, 0.06);
+}
+
+.professional-config-card h5,
+.professional-room-card h5,
+.professional-room-list h5 {
+  margin: 0 0 0.75rem;
+  color: var(--staff-text-strong);
+  font-size: 1rem;
+}
+
+.professional-room-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.professional-room-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--staff-border);
+}
+
+.professional-room-list-row:last-child { border-bottom: 0; }
+.professional-room-list-row p { margin: 0.2rem 0 0; color: var(--staff-muted); }
+.professional-room-inline { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; }
+.professional-room-inline .staff-field { min-width: 135px; flex: 1 1 135px; }
+.professional-room-empty { padding: 1.2rem; color: var(--staff-muted); text-align: center; }
+
+.staff-room-floor-group { grid-column: 1 / -1; min-width: 0; }
+.staff-room-floor-head { display: flex; justify-content: space-between; gap: 1rem; margin: 0 0 0.65rem; color: var(--staff-text-strong); }
+.staff-room-floor-head span { color: var(--staff-muted); font-size: 0.85rem; }
+.staff-room-floor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 0.75rem; }
+
+@media (max-width: 1100px) {
+  .professional-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .professional-room-columns,
+  .professional-config-grid { grid-template-columns: 1fr; }
+  .staff-room-floor-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .professional-room-list-row { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 390px) {
+  .professional-config-card,
+  .professional-room-card,
+  .professional-room-list > article,
+  .professional-room-list > section { border-radius: 14px; padding: 0.8rem; }
+  .staff-room-floor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Room Operations progressive single-route shell and manager inventory */
+.staff-room-shell-nav,
+.professional-config-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  padding: 0.4rem;
+  overflow-x: auto;
+  border: 1px solid var(--staff-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--staff-panel-strong) 92%, transparent);
+  scrollbar-width: thin;
+}
+
+.staff-room-shell-nav button,
+.professional-config-tabs button {
+  min-height: 40px;
+  padding: 0.6rem 0.8rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--staff-muted);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.staff-room-shell-nav button:hover,
+.staff-room-shell-nav button:focus-visible,
+.staff-room-shell-nav button.is-active,
+.professional-config-tabs button:hover,
+.professional-config-tabs button:focus-visible,
+.professional-config-tabs button.is-active {
+  background: var(--staff-panel-strong);
+  color: var(--staff-text-strong);
+  box-shadow: 0 4px 16px rgba(29, 45, 70, 0.1);
+}
+
+.professional-inventory-toolbar {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.5fr) repeat(4, minmax(130px, 1fr)) auto;
+  align-items: end;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 0.9rem;
+  border: 1px solid var(--staff-border);
+  border-radius: 16px;
+  background: var(--staff-panel-strong);
+}
+
+.professional-inventory-layout { display: flex; gap: 0.35rem; }
+.professional-inventory-layout .is-active { outline: 2px solid color-mix(in srgb, var(--staff-accent) 48%, transparent); }
+.professional-inventory-table-wrap { overflow: auto; border: 1px solid var(--staff-border); border-radius: 16px; background: var(--staff-panel-strong); }
+.professional-inventory-table { width: 100%; min-width: 780px; border-collapse: collapse; }
+.professional-inventory-table th,
+.professional-inventory-table td { padding: 0.78rem 0.85rem; border-bottom: 1px solid var(--staff-border); text-align: left; vertical-align: middle; }
+.professional-inventory-table thead th { position: sticky; top: 0; z-index: 1; color: var(--staff-muted); background: var(--staff-panel-strong); font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.professional-inventory-table thead button { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.professional-inventory-table tbody tr:hover { background: color-mix(in srgb, var(--staff-accent) 5%, transparent); }
+.professional-inventory-table th strong,
+.professional-inventory-table th small { display: block; }
+.professional-inventory-table th small { margin-top: 0.2rem; color: var(--staff-muted); font-weight: 500; }
+
+.professional-room-status { display: inline-flex; align-items: center; min-height: 27px; padding: 0.25rem 0.55rem; border: 1px solid currentColor; border-radius: 999px; color: #38516f; background: #edf3fa; font-size: 0.75rem; font-weight: 800; }
+.professional-room-status.is-available { color: #216e4e; background: #eaf8f1; }
+.professional-room-status.is-occupied,
+.professional-room-status.is-booked { color: #845314; background: #fff5df; }
+.professional-room-status.is-maintenance,
+.professional-room-status.is-inactive { color: #8f2f2f; background: #fff0f0; }
+.professional-room-status.is-cleaning { color: #285f91; background: #edf6ff; }
+
+.professional-inventory-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.8rem; }
+.professional-inventory-card { display: grid; gap: 0.8rem; padding: 1rem; border: 1px solid var(--staff-border); border-radius: 16px; background: var(--staff-panel-strong); }
+.professional-inventory-card h5 { margin: 0.15rem 0; font-size: 1.25rem; }
+.professional-inventory-card p,
+.professional-inventory-card span { margin: 0; color: var(--staff-muted); }
+.professional-inventory-card dl,
+.professional-room-detail-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin: 0; }
+.professional-inventory-card dl div,
+.professional-room-detail-facts div { padding: 0.65rem; border-radius: 10px; background: color-mix(in srgb, var(--staff-panel) 88%, transparent); }
+.professional-inventory-card dt,
+.professional-room-detail-facts dt { color: var(--staff-muted); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+.professional-inventory-card dd,
+.professional-room-detail-facts dd { margin: 0.2rem 0 0; color: var(--staff-text-strong); font-weight: 800; }
+.professional-inventory-pager { display: flex; align-items: center; justify-content: center; gap: 0.8rem; margin-top: 1rem; }
+
+.professional-room-detail-dialog { width: min(920px, calc(100% - 2rem)); max-height: min(900px, calc(100dvh - 2rem)); padding: 0; overflow: auto; border: 0; border-radius: 20px; background: var(--staff-panel); color: var(--staff-text-strong); box-shadow: 0 28px 90px rgba(12, 26, 47, 0.3); }
+.professional-room-detail-dialog::backdrop { background: rgba(12, 24, 43, 0.55); backdrop-filter: blur(3px); }
+.professional-room-detail-head { position: sticky; top: 0; z-index: 3; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; border-bottom: 1px solid var(--staff-border); background: var(--staff-panel-strong); }
+.professional-room-detail-head h4 { margin: 0; }
+.professional-room-detail-content,
+.professional-room-media-manager { padding: 1.1rem; }
+.professional-room-media-manager { border-top: 1px solid var(--staff-border); }
+.professional-room-media-manager h5 { margin: 0; }
+.professional-room-media-manager > div > p { margin: 0.35rem 0 0; color: var(--staff-muted); }
+.professional-room-image-upload { display: grid; grid-template-columns: 1.2fr 1.2fr 1.4fr auto auto; align-items: end; gap: 0.65rem; margin-top: 1rem; }
+.professional-room-check { display: flex; align-items: center; gap: 0.45rem; min-height: 42px; font-size: 0.84rem; }
+.professional-room-image-list { display: grid; gap: 0.65rem; margin-top: 0.8rem; }
+.professional-room-image-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 0.8rem; padding: 0.7rem; border: 1px solid var(--staff-border); border-radius: 14px; background: var(--staff-panel-strong); }
+.professional-room-image-row img { width: 110px; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 10px; background: #e9edf3; }
+.professional-room-image-row p { margin: 0.2rem 0; color: var(--staff-muted); }
+.professional-room-image-row span { color: var(--staff-muted); font-size: 0.75rem; }
+.professional-room-image-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem; max-width: 310px; }
+
+@media (max-width: 1100px) {
+  .professional-inventory-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .professional-room-image-upload { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .staff-room-shell-nav { margin-inline: -0.25rem; border-radius: 10px; }
+  .professional-inventory-toolbar { grid-template-columns: 1fr 1fr; }
+  .professional-inventory-toolbar .is-search { grid-column: 1 / -1; }
+  .professional-inventory-layout { grid-column: 1 / -1; }
+  .professional-room-detail-dialog { width: 100%; height: 100dvh; max-height: none; border-radius: 0; }
+  .professional-room-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .professional-room-image-row { grid-template-columns: 80px minmax(0, 1fr); align-items: start; }
+  .professional-room-image-row img { width: 80px; }
+  .professional-room-image-actions { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
+}
+
+@media (max-width: 460px) {
+  .professional-inventory-toolbar,
+  .professional-room-image-upload { grid-template-columns: 1fr; }
+  .professional-inventory-toolbar .is-search,
+  .professional-inventory-layout { grid-column: auto; }
+  .professional-room-detail-facts { grid-template-columns: 1fr; }
+  .professional-inventory-pager { justify-content: space-between; }
+}

@@ -10,6 +10,47 @@ const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 let USER_LOCATION = "Not shared";
 
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+}
+
+function createRafThrottled(callback) {
+  let frameId = 0;
+
+  return (...args) => {
+    if (frameId) return;
+    frameId = window.requestAnimationFrame(() => {
+      frameId = 0;
+      callback(...args);
+    });
+  };
+}
+
+function getSafePublicNavigationUrl(value = "") {
+  const candidate = typeof value === "string" ? value.trim() : "";
+  if (!candidate) return "";
+  if (candidate.startsWith("#")) return candidate;
+
+  try {
+    const parsedUrl = new URL(candidate, window.location.href);
+    return ["http:", "https:"].includes(parsedUrl.protocol) ? parsedUrl.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function getPublicNotificationMessage(value, fallback = "Something went wrong. Please try again.") {
+  const message = String(value || "").trim().slice(0, 3000);
+  if (!message) return "";
+
+  const containsInternalDetail =
+    /(?:\bat\s+(?:async\s+)?[\w$.<>]+\s*\(|[a-z]:\\|\/(?:home|var|usr)\/|postgres|supabase|sqlstate|stack\s*trace|jwt[_ -]?secret|service[_ -]?role|api[_ -]?key)/i.test(
+      message
+    );
+
+  return containsInternalDetail ? fallback : message;
+}
+
 function getRuntimeBooleanConfig(key, fallback = false) {
   const value = window.APP_RUNTIME_CONFIG?.[key];
 
@@ -35,7 +76,7 @@ function getDefaultBackendBaseUrl() {
     hostname.endsWith(".localhost");
   const baseUrl =
     isLocalHost || !window.location.origin || window.location.origin === "null"
-      ? "http://localhost:5000"
+      ? `http://${hostname || "localhost"}:5000`
       : window.location.origin;
 
   return baseUrl.replace(/\/+$/, "");
@@ -220,6 +261,146 @@ function getActiveHotelName() {
   return stateHotelName;
 }
 
+const DEFAULT_PUBLIC_ORDERING_STATE = Object.freeze({
+  customerOrderingEnabled: true,
+  staffOrderingEnabled: true,
+  whatsappOrderingEnabled: true,
+  secureOnlinePaymentEnabled: true,
+  cashOnDeliveryEnabled: true,
+  manualUpiPaymentEnabled: true,
+  title: "",
+  message: "",
+  buttonText: "",
+  buttonLink: "",
+  icon: ""
+});
+
+function normalizeOrderingUiText(value = "", maxLength = 300) {
+  return typeof value === "string"
+    ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, maxLength)
+    : "";
+}
+
+function normalizeOrderingUiLink(value = "") {
+  const candidate = normalizeOrderingUiText(value, 2000);
+
+  if (!candidate) {
+    return "";
+  }
+
+  if (candidate.startsWith("/")) {
+    return candidate;
+  }
+
+  try {
+    const parsedUrl = new URL(candidate, window.location.origin);
+    return ["http:", "https:"].includes(parsedUrl.protocol) ? parsedUrl.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeOrderingState(rawOrdering = null) {
+  if (!rawOrdering || typeof rawOrdering !== "object" || Array.isArray(rawOrdering)) {
+    return { ...DEFAULT_PUBLIC_ORDERING_STATE };
+  }
+
+  return {
+    customerOrderingEnabled: rawOrdering.customerOrderingEnabled !== false,
+    staffOrderingEnabled: rawOrdering.staffOrderingEnabled !== false,
+    whatsappOrderingEnabled: rawOrdering.whatsappOrderingEnabled !== false,
+    secureOnlinePaymentEnabled: rawOrdering.secureOnlinePaymentEnabled !== false,
+    cashOnDeliveryEnabled: rawOrdering.cashOnDeliveryEnabled !== false,
+    manualUpiPaymentEnabled: rawOrdering.manualUpiPaymentEnabled !== false,
+    title: normalizeOrderingUiText(rawOrdering.title, 160),
+    message: normalizeOrderingUiText(rawOrdering.message, 1000),
+    buttonText: normalizeOrderingUiText(rawOrdering.buttonText, 120),
+    buttonLink: normalizeOrderingUiLink(rawOrdering.buttonLink),
+    icon: normalizeOrderingUiText(rawOrdering.icon, 40)
+  };
+}
+
+function getHotelOrderingState() {
+  return normalizeOrderingState(
+    window.APP_STATE?.ordering || window.APP_STATE?.hotel?.ordering || null
+  );
+}
+
+function updateHotelOrderingState(nextOrdering = null) {
+  const normalizedOrdering = normalizeOrderingState(nextOrdering);
+
+  if (window.APP_STATE) {
+    window.APP_STATE.ordering = normalizedOrdering;
+
+    if (window.APP_STATE.hotel && typeof window.APP_STATE.hotel === "object") {
+      window.APP_STATE.hotel.ordering = normalizedOrdering;
+    }
+  }
+
+  return normalizedOrdering;
+}
+
+function isCustomerOrderingEnabled() {
+  return getHotelOrderingState().customerOrderingEnabled !== false;
+}
+
+function isWhatsAppOrderingEnabled() {
+  return getHotelOrderingState().whatsappOrderingEnabled !== false;
+}
+
+function buildOrderingUnavailableWhatsAppLink() {
+  if (!isWhatsAppOrderingEnabled()) {
+    return "";
+  }
+
+  const cleanedPhone = cleanPhone(CONFIG.OWNER_WHATSAPP_NUMBER);
+
+  if (!cleanedPhone) {
+    return "";
+  }
+
+  const hotelName =
+    normalizeOrderingUiText(window.APP_STATE?.hotel?.name || CONFIG.HOTEL_NAME, 120) ||
+    "the restaurant";
+
+  return ownerWhatsAppLink(`Hi, I want to place an order with ${hotelName}.`);
+}
+
+function getOrderingUnavailableActionLabel() {
+  const ordering = getHotelOrderingState();
+  return (
+    ordering.buttonText ||
+    (buildOrderingUnavailableWhatsAppLink() ? "WhatsApp to Order" : "Online Ordering Unavailable")
+  );
+}
+
+function getOrderingUnavailableModalConfig(override = null) {
+  const baseOrdering = getHotelOrderingState();
+  const nextOrdering = override
+    ? normalizeOrderingState({ ...baseOrdering, ...override })
+    : baseOrdering;
+  const fallbackWhatsAppLink =
+    nextOrdering.whatsappOrderingEnabled !== false
+      ? buildOrderingUnavailableWhatsAppLink()
+      : "";
+  const buttonLink = nextOrdering.buttonLink || fallbackWhatsAppLink;
+  const buttonText = nextOrdering.buttonText || (buttonLink ? "WhatsApp Us" : "");
+
+  return {
+    title: nextOrdering.title || "Online Ordering is Currently Unavailable",
+    message:
+      nextOrdering.message ||
+      "We're unable to receive online orders right now. Please visit the restaurant or contact us directly.",
+    buttonText,
+    buttonLink,
+    icon: nextOrdering.icon || ""
+  };
+}
+
+function isOrderingDisabledApiError(error) {
+  return String(error?.response?.code || "").trim().toUpperCase() === "ORDERING_DISABLED";
+}
+
 function normalizeOrderContextText(value = "", maxLength = 80) {
   const text = typeof value === "string"
     ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim()
@@ -255,12 +436,21 @@ function getActiveOrderContext(rawContext = window.APP_STATE?.orderContext || {}
     2000,
   );
 
+  const opaqueQrToken = normalizeOrderContextText(context.opaqueQrToken, 200);
+  const qrCsrfToken = normalizeOrderContextText(context.qrCsrfToken, 200);
+  const qrSessionVersion = Math.max(1, Number(context.qrSessionVersion || 1));
+  const secureQr = context.secureQr === true && !!opaqueQrToken;
+
   return {
     orderType,
     tableNumber,
     orderSource,
     qrContextToken,
     addToOrderId,
+    opaqueQrToken,
+    qrCsrfToken,
+    qrSessionVersion,
+    secureQr,
     addToken
   };
 }
@@ -1000,7 +1190,6 @@ if (aboutTitleEl) {
   } else {
     aboutTitleEl.textContent = fullTitle;
   }
-  console.log("APP_STATE:", window.APP_STATE);
 }
 
 
@@ -1144,6 +1333,8 @@ function createImageMarkup({ src, alt, badge, name }) {
           data-menu-image
           src="${escapeAttr(safeSrc)}"
           alt="${safeAlt}"
+          width="640"
+          height="440"
           loading="lazy"
           decoding="async"
           referrerpolicy="no-referrer"
@@ -1234,7 +1425,7 @@ function renderGallerySection() {
 
       return `
         <div class="${getGalleryItemClassName(item.layoutVariant)}" role="listitem">
-          <img src="${escapeAttr(imageUrl)}" alt="${alt}" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+          <img src="${escapeAttr(imageUrl)}" alt="${alt}" width="1376" height="768" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div>
       `;
@@ -1254,34 +1445,13 @@ const WhatsAppFallback = (() => {
   }
 
   function showCustomAlert(message) {
-    let existingAlert = document.querySelector(".custom-popup-alert");
-    if (existingAlert) {
-      existingAlert.remove();
-    }
-
-    const alertBox = document.createElement("div");
-    alertBox.className = "custom-popup-alert";
-    alertBox.innerHTML = `
-    <div class="custom-popup-alert__content">
-      <span class="custom-popup-alert__icon">⚠️</span>
-      <p class="custom-popup-alert__text">${message}</p>
-    </div>
-  `;
-
-    document.body.appendChild(alertBox);
-
-    requestAnimationFrame(() => {
-      alertBox.classList.add("show");
+    showToast({
+      type: "warning",
+      title: "WhatsApp needs your help",
+      message,
+      duration: 8000,
+      dedupeKey: "whatsapp-popup-blocked"
     });
-
-    setTimeout(() => {
-      alertBox.classList.remove("show");
-      alertBox.classList.add("hide");
-
-      setTimeout(() => {
-        alertBox.remove();
-      }, 400);
-    }, 6000);
   }
 
   function open(link) {
@@ -1320,8 +1490,29 @@ const WhatsAppFallback = (() => {
     });
 
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && modal && !modal.hidden) {
+      if (!modal || modal.hidden) return;
+
+      if (e.key === "Escape") {
         close();
+        return;
+      }
+
+      if (e.key !== "Tab") return;
+      const focusable = getFocusableElements();
+      if (!focusable.length) {
+        e.preventDefault();
+        dialog?.focus?.();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     });
   }
@@ -1329,6 +1520,537 @@ const WhatsAppFallback = (() => {
   return { bind, open, close };
 })();
 
+const HotelPopupNotificationModal = (() => {
+  let modal;
+  let dialog;
+  let mediaWrap;
+  let image;
+  let title;
+  let description;
+  let dismissOption;
+  let dismissTodayInput;
+  let cta;
+  let ctaText;
+  let lastFocused;
+  let previousBodyOverflow = "";
+  let activeNotificationKey = "";
+  const closedThisView = new Set();
+
+  function ensureNodes() {
+    modal = modal || $("#hotelPopupModal");
+    dialog = dialog || $(".hotel-popup__dialog", modal || document);
+    mediaWrap = mediaWrap || $("#hotelPopupMediaWrap");
+    image = image || $("#hotelPopupImage");
+    title = title || $("#hotelPopupTitle");
+    description = description || $("#hotelPopupDescription");
+    dismissOption = dismissOption || $("#hotelPopupDismissOption");
+    dismissTodayInput = dismissTodayInput || $("#hotelPopupDismissTodayInput");
+    cta = cta || $("#hotelPopupCta");
+    ctaText = ctaText || $("#hotelPopupCtaText");
+
+    return (
+      !!modal &&
+      !!dialog &&
+      !!title &&
+      !!description &&
+      !!dismissOption &&
+      !!dismissTodayInput &&
+      !!cta &&
+      !!ctaText
+    );
+  }
+
+  function isAbsoluteHttpUrl(value = "") {
+    try {
+      const parsedUrl = new URL(value, window.location.origin);
+      return ["http:", "https:"].includes(parsedUrl.protocol) && parsedUrl.origin !== window.location.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  function getNotificationKey(notification = {}) {
+    const hotelSlug =
+      typeof notification.hotelSlug === "string" && notification.hotelSlug.trim()
+        ? notification.hotelSlug.trim()
+        : window.APP_STATE?.activeHotelSlug || "default";
+    const notificationId =
+      typeof notification.id === "string" || typeof notification.id === "number"
+        ? String(notification.id).trim()
+        : "";
+    const notificationTitle =
+      typeof notification.title === "string" ? notification.title.trim() : "";
+    const notificationPriority = Number.isFinite(Number(notification.priority))
+      ? Number(notification.priority)
+      : 0;
+
+    return notificationId || `${hotelSlug}::${notificationTitle}::${notificationPriority}`;
+  }
+
+  function getStorageKey(notification = {}) {
+    const notificationKey = getNotificationKey(notification);
+
+    if (!notificationKey) {
+      return "";
+    }
+
+    return `hotel_popup_dismissed_${notificationKey}`;
+  }
+
+  function getDayOptOutStorageKey(notification = {}) {
+    const notificationKey = getNotificationKey(notification);
+
+    if (!notificationKey) {
+      return "";
+    }
+
+    return `hotel_popup_dismissed_today_${notificationKey}`;
+  }
+
+  function getTodayStorageStamp() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  function getPopupNotificationsFromState() {
+    if (Array.isArray(window.APP_STATE?.popupNotifications)) {
+      return window.APP_STATE.popupNotifications;
+    }
+
+    const singleNotification = window.APP_STATE?.popupNotification || null;
+    return singleNotification ? [singleNotification] : [];
+  }
+
+  function getDisplayMode(notification = {}) {
+    const displayMode =
+      typeof notification.displayMode === "string"
+        ? notification.displayMode.trim().toLowerCase()
+        : "";
+
+    if (displayMode === "every_visit" || displayMode === "once_per_day") {
+      return displayMode;
+    }
+
+    return "once_per_session";
+  }
+
+  function hasBeenDismissed(notification = {}) {
+    const notificationKey = getNotificationKey(notification);
+    if (!notificationKey) {
+      return false;
+    }
+
+    if (closedThisView.has(notificationKey)) {
+      return true;
+    }
+
+    const storageKey = getStorageKey(notification);
+    const dayOptOutStorageKey = getDayOptOutStorageKey(notification);
+    if (!storageKey) {
+      return Boolean(
+        dayOptOutStorageKey &&
+        window.localStorage.getItem(dayOptOutStorageKey) === getTodayStorageStamp()
+      );
+    }
+
+    try {
+      if (
+        dayOptOutStorageKey &&
+        window.localStorage.getItem(dayOptOutStorageKey) === getTodayStorageStamp()
+      ) {
+        return true;
+      }
+
+      const displayMode = getDisplayMode(notification);
+
+      if (displayMode === "once_per_day") {
+        return window.localStorage.getItem(storageKey) === getTodayStorageStamp();
+      }
+
+      if (displayMode === "once_per_session") {
+        return window.sessionStorage.getItem(storageKey) === "1";
+      }
+    } catch (error) {
+      return false;
+    }
+
+    return false;
+  }
+
+  function rememberDismissal(notification = {}, options = {}) {
+    const notificationKey = getNotificationKey(notification);
+    if (notificationKey) {
+      closedThisView.add(notificationKey);
+    }
+
+    const storageKey = getStorageKey(notification);
+    const dayOptOutStorageKey = getDayOptOutStorageKey(notification);
+    if (!storageKey) {
+      if (options.forceToday && dayOptOutStorageKey) {
+        try {
+          window.localStorage.setItem(dayOptOutStorageKey, getTodayStorageStamp());
+        } catch (error) {
+          // Ignore storage access errors so the public site keeps working.
+        }
+      }
+      return;
+    }
+
+    try {
+      if (options.forceToday && dayOptOutStorageKey) {
+        window.localStorage.setItem(dayOptOutStorageKey, getTodayStorageStamp());
+        return;
+      }
+
+      const displayMode = getDisplayMode(notification);
+
+      if (displayMode === "once_per_day") {
+        window.localStorage.setItem(storageKey, getTodayStorageStamp());
+        return;
+      }
+
+      if (displayMode === "once_per_session") {
+        window.sessionStorage.setItem(storageKey, "1");
+      }
+    } catch (error) {
+      // Ignore storage access errors so the public site keeps working.
+    }
+  }
+
+  function getNextEligibleNotification() {
+    return getPopupNotificationsFromState().find((notification) => !hasBeenDismissed(notification));
+  }
+
+  function close({ remember = true, showNext = true } = {}) {
+    if (!ensureNodes() || modal.hidden) return;
+
+    const currentNotification = getPopupNotificationsFromState().find(
+      (notification) => getNotificationKey(notification) === activeNotificationKey
+    );
+
+    if (remember && currentNotification) {
+      rememberDismissal(currentNotification, {
+        forceToday: Boolean(dismissTodayInput?.checked)
+      });
+    }
+
+    activeNotificationKey = "";
+    modal.classList.remove("is-visible");
+    modal.setAttribute("aria-hidden", "true");
+    window.setTimeout(() => {
+      modal.hidden = true;
+      if (showNext) {
+        renderFromState();
+      }
+    }, prefersReducedMotion() ? 0 : 220);
+    document.body.style.overflow = previousBodyOverflow;
+
+    if (lastFocused && typeof lastFocused.focus === "function") {
+      lastFocused.focus();
+    }
+  }
+
+  function open(notification = {}) {
+    if (!ensureNodes()) return;
+
+    const notificationTitle =
+      typeof notification.title === "string" ? notification.title.trim() : "";
+
+    if (!notificationTitle) {
+      return;
+    }
+
+    activeNotificationKey = getNotificationKey(notification);
+    lastFocused = document.activeElement;
+    title.textContent = notificationTitle;
+    dismissTodayInput.checked = false;
+    description.textContent =
+      typeof notification.description === "string" && notification.description.trim()
+        ? notification.description.trim()
+        : "";
+
+    if (dismissOption) {
+      dismissOption.hidden = getDisplayMode(notification) === "once_per_day";
+    }
+
+    const imageUrl = normalizeImagePath(notification.imageUrl || "");
+    if (imageUrl && mediaWrap && image) {
+      image.src = imageUrl;
+      image.alt = notificationTitle;
+      mediaWrap.hidden = false;
+    } else if (mediaWrap && image) {
+      image.src = "";
+      image.alt = "";
+      mediaWrap.hidden = true;
+    }
+
+    const nextCtaText =
+      typeof notification.ctaText === "string" ? notification.ctaText.trim() : "";
+    const nextCtaLink = getSafePublicNavigationUrl(notification.ctaLink);
+
+    if (nextCtaText && nextCtaLink) {
+      cta.hidden = false;
+      cta.href = nextCtaLink;
+      cta.target = isAbsoluteHttpUrl(nextCtaLink) ? "_blank" : "_self";
+      cta.rel = isAbsoluteHttpUrl(nextCtaLink) ? "noopener noreferrer" : "";
+      ctaText.textContent = nextCtaText;
+    } else {
+      cta.hidden = true;
+      cta.href = "#";
+      cta.target = "_self";
+      cta.rel = "noopener noreferrer";
+      ctaText.textContent = "";
+    }
+
+    previousBodyOverflow = document.body.style.overflow;
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+    requestAnimationFrame(() => {
+      modal.classList.add("is-visible");
+      const initialFocus = modal.querySelector("[data-hotel-popup-close]") || dialog;
+      initialFocus?.focus?.();
+    });
+  }
+
+  function renderFromState() {
+    if (!ensureNodes()) return;
+
+    const notification = getNextEligibleNotification();
+
+    if (!notification) {
+      if (!modal.hidden) {
+        close({ remember: false, showNext: false });
+      }
+      return;
+    }
+
+    open(notification);
+  }
+
+  function getFocusableElements() {
+    if (!modal) return [];
+    return $(
+      'a[href]:not([hidden]), button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"]):not([hidden])',
+      modal
+    ).filter((element) => element.getClientRects().length > 0);
+  }
+
+  function bind() {
+    if (!ensureNodes() || modal.dataset.boundHotelPopup === "true") return;
+
+    modal.addEventListener("click", (e) => {
+      if (e.target.closest("[data-hotel-popup-close]")) {
+        close();
+        return;
+      }
+
+      if (e.target.closest("#hotelPopupCta")) {
+        const currentNotification = getPopupNotificationsFromState().find(
+          (notification) => getNotificationKey(notification) === activeNotificationKey
+        );
+
+        if (currentNotification) {
+          rememberDismissal(currentNotification, {
+            forceToday: Boolean(dismissTodayInput?.checked)
+          });
+        }
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modal && !modal.hidden) {
+        close();
+      }
+    });
+
+    modal.dataset.boundHotelPopup = "true";
+  }
+
+  return { bind, close, renderFromState };
+})();
+
+const HotelOrderingUnavailableModal = (() => {
+  let modal;
+  let title;
+  let description;
+  let eyebrow;
+  let cta;
+  let ctaText;
+  let lastFocused;
+
+  function ensureStyles() {
+    if (document.getElementById("hotelOrderingUnavailableStyles")) return;
+
+    const style = document.createElement("style");
+    style.id = "hotelOrderingUnavailableStyles";
+    style.textContent = `
+      .hotel-ordering-disabled-btn {
+        width: 100%;
+        justify-content: center;
+        border: 1px solid rgba(201, 168, 76, 0.36);
+        background: rgba(201, 168, 76, 0.12);
+        color: rgba(255,255,255,0.92);
+        cursor: pointer;
+      }
+
+      .hotel-ordering-disabled-btn:hover,
+      .hotel-ordering-disabled-btn:focus-visible {
+        background: rgba(201, 168, 76, 0.18);
+        border-color: rgba(201, 168, 76, 0.52);
+      }
+
+      .hotel-ordering-inline-notice {
+        margin: 0 0 14px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(201, 168, 76, 0.2);
+        background: rgba(201, 168, 76, 0.1);
+        color: rgba(255,255,255,0.86);
+        font-size: 0.95rem;
+        line-height: 1.55;
+      }
+
+      .cart-item-actions .qty-btn[disabled] {
+        opacity: 0.42;
+        cursor: not-allowed;
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function ensureNodes() {
+    ensureStyles();
+
+    modal = modal || document.getElementById("hotelOrderingUnavailableModal");
+
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "hotelOrderingUnavailableModal";
+      modal.className = "hotel-popup";
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+      modal.setAttribute("role", "dialog");
+      modal.setAttribute("aria-modal", "true");
+      modal.setAttribute("aria-labelledby", "hotelOrderingUnavailableTitle");
+      modal.innerHTML = `
+        <div class="hotel-popup__backdrop" data-ordering-unavailable-close></div>
+        <div class="hotel-popup__dialog glass-card" role="document">
+          <button type="button" class="hotel-popup__close" aria-label="Close ordering message" data-ordering-unavailable-close>
+            <i class="fas fa-times" aria-hidden="true"></i>
+          </button>
+          <div class="hotel-popup__body" style="grid-column: 1 / -1;">
+            <p id="hotelOrderingUnavailableEyebrow" class="hotel-popup__eyebrow">Ordering Update</p>
+            <h3 id="hotelOrderingUnavailableTitle" class="hotel-popup__title"></h3>
+            <p id="hotelOrderingUnavailableDescription" class="hotel-popup__description"></p>
+            <a
+              id="hotelOrderingUnavailableCta"
+              href="#"
+              target="_self"
+              rel="noopener noreferrer"
+              class="btn btn-primary hotel-popup__cta"
+              hidden
+            >
+              <span id="hotelOrderingUnavailableCtaText"></span>
+            </a>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    eyebrow = eyebrow || document.getElementById("hotelOrderingUnavailableEyebrow");
+    title = title || document.getElementById("hotelOrderingUnavailableTitle");
+    description = description || document.getElementById("hotelOrderingUnavailableDescription");
+    cta = cta || document.getElementById("hotelOrderingUnavailableCta");
+    ctaText = ctaText || document.getElementById("hotelOrderingUnavailableCtaText");
+
+    return !!modal && !!eyebrow && !!title && !!description && !!cta && !!ctaText;
+  }
+
+  function close() {
+    if (!ensureNodes()) return;
+
+    modal.hidden = true;
+    modal.classList.remove("is-visible");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+
+    if (lastFocused && typeof lastFocused.focus === "function") {
+      lastFocused.focus({ preventScroll: true });
+    }
+  }
+
+  function open(override = null) {
+    if (!ensureNodes()) return;
+
+    const config = getOrderingUnavailableModalConfig(override);
+    lastFocused = document.activeElement;
+    eyebrow.textContent = config.icon
+      ? `${config.icon} Ordering Update`
+      : "Ordering Update";
+    title.textContent = config.title;
+    description.textContent = config.message;
+
+    if (config.buttonText && config.buttonLink) {
+      cta.hidden = false;
+      cta.href = config.buttonLink;
+      ctaText.textContent = config.buttonText;
+    } else {
+      cta.hidden = true;
+      cta.href = "#";
+      ctaText.textContent = "";
+    }
+
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+
+    requestAnimationFrame(() => {
+      modal.classList.add("is-visible");
+    });
+
+    const focusTarget = cta.hidden
+      ? modal.querySelector("[data-ordering-unavailable-close]")
+      : cta;
+    focusTarget?.focus?.({ preventScroll: true });
+  }
+
+  function bind() {
+    if (!ensureNodes() || modal.dataset.boundOrderingUnavailable === "true") {
+      return;
+    }
+
+    modal.addEventListener("click", (event) => {
+      if (event.target.closest("[data-ordering-unavailable-close]")) {
+        close();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && modal && !modal.hidden) {
+        close();
+      }
+    });
+
+    modal.dataset.boundOrderingUnavailable = "true";
+  }
+
+  return { bind, close, open };
+})();
+
+function getReviewAvatarSource(value = "") {
+  if (window.ReviewAvatar?.resolveReviewAvatar) {
+    return window.ReviewAvatar.resolveReviewAvatar(value).src;
+  }
+
+  return normalizeImagePath(value) || "./img/default-review-avatar.v1.svg";
+}
 function normalizeTestimonialsData(items = []) {
   if (!Array.isArray(items)) return [];
 
@@ -1339,7 +2061,7 @@ function normalizeTestimonialsData(items = []) {
       const text = typeof item.text === "string" ? item.text.trim() : "";
       const name = typeof item.name === "string" ? item.name.trim() : "";
       const role = typeof item.role === "string" ? item.role.trim() : "";
-      const avatar = normalizeImagePath(item.avatar || item.image || "");
+      const avatar = getReviewAvatarSource(item.avatar || item.image || "");
       const stars = Math.max(1, Math.min(5, Math.round(Number(item.stars || 5))));
 
       if (!text || !name) return null;
@@ -1380,6 +2102,7 @@ function renderTestimonialsSection(testimonials = window.APP_STATE?.testimonials
   dotsWrap.setAttribute("aria-hidden", hasMultipleTestimonials ? "false" : "true");
 
   if (!safeTestimonials.length) {
+    track.innerHTML = '<div class="testi-empty" role="status"><strong>No reviews yet</strong><span>Guest reviews will appear here after approval.</span></div>';
     return;
   }
 
@@ -1394,7 +2117,7 @@ function renderTestimonialsSection(testimonials = window.APP_STATE?.testimonials
       <p class="testi-text">${escapeHTML(testimonial.text)}</p>
       <div class="testi-author">
         <div class="testi-avatar">
-          <img src="${escapeAttr(testimonial.avatar)}" alt="${escapeAttr(testimonial.name)}" loading="lazy" />
+          <img class="review-card__avatar" data-review-avatar src="${escapeAttr(testimonial.avatar)}" alt="" width="96" height="96" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
         </div>
         <div class="testi-stars" aria-label="${testimonial.stars} out of 5 stars">${stars}</div>
         <strong class="testi-name">${escapeHTML(testimonial.name)}</strong>
@@ -1402,6 +2125,7 @@ function renderTestimonialsSection(testimonials = window.APP_STATE?.testimonials
       </div>
     `;
     track.appendChild(card);
+    window.ReviewAvatar?.bindReviewAvatars(card);
   });
 
   let currentIndex = 0;
@@ -1581,6 +2305,7 @@ function openWhatsAppSafely(url) {
 }
 
 function getOrderTrackingUrl(tracking = {}) {
+  tracking = tracking && typeof tracking === "object" ? tracking : {};
   const orderId = String(tracking.orderId || "").trim();
   const hotelSlug = String(tracking.hotelSlug || getActiveHotelSlug() || "").trim();
   const token = String(tracking.token || "").trim();
@@ -1600,6 +2325,7 @@ function getOrderTrackingUrl(tracking = {}) {
 }
 
 function rememberOrderTracking(tracking = {}) {
+  tracking = tracking && typeof tracking === "object" ? tracking : {};
   const trackingUrl = getOrderTrackingUrl(tracking);
   const orderId = String(tracking.orderId || "").trim();
   const hotelSlug = String(tracking.hotelSlug || getActiveHotelSlug() || "").trim();
@@ -1831,6 +2557,8 @@ function renderRecentOrderTrackingShortcut() {
 }
 
 function showOrderTrackingPrompt(tracking = {}, message = "Your order was saved. You can now track it live.") {
+  if (!tracking || typeof tracking !== "object") return;
+
   const trackingRecord = rememberOrderTracking(tracking);
   if (!trackingRecord) return;
 
@@ -1866,6 +2594,56 @@ function showOrderTrackingPrompt(tracking = {}, message = "Your order was saved.
       prompt.classList.remove("is-visible");
       prompt.hidden = true;
       renderRecentOrderTrackingShortcut();
+    }, { once: true });
+}
+
+function getSecureQrOrderStatusUrl(publicReference = "") {
+  const normalizedReference = String(publicReference || "").trim();
+  if (!normalizedReference) return "";
+
+  const statusPath = `qr-order-status.html?submission=${encodeURIComponent(normalizedReference)}`;
+
+  try {
+    return new URL(statusPath, window.location.href).toString();
+  } catch {
+    return statusPath;
+  }
+}
+
+function showSecureQrOrderStatusPrompt(publicReference = "") {
+  const statusUrl = getSecureQrOrderStatusUrl(publicReference);
+  if (!statusUrl) return;
+
+  removeRecentOrderTrackingShortcut();
+  let prompt = document.getElementById("orderTrackingPrompt");
+
+  if (!prompt) {
+    prompt = document.createElement("div");
+    prompt.id = "orderTrackingPrompt";
+    prompt.className = "order-tracking-prompt glass-card";
+    prompt.setAttribute("role", "status");
+    prompt.setAttribute("aria-live", "polite");
+    document.body.appendChild(prompt);
+  }
+
+  prompt.innerHTML = `
+    <div class="order-tracking-prompt__content">
+      <span class="order-tracking-prompt__kicker">Table order received</span>
+      <strong>Your order was confirmed. You can now view its live status.</strong>
+    </div>
+    <div class="order-tracking-prompt__actions">
+      <a class="btn btn-primary" href="${escapeAttr(statusUrl)}" target="_blank" rel="noopener noreferrer">View Order Status</a>
+      <button type="button" class="order-tracking-prompt__close" aria-label="Dismiss order status link">&times;</button>
+    </div>
+  `;
+
+  prompt.hidden = false;
+  prompt.classList.add("is-visible");
+  prompt
+    .querySelector(".order-tracking-prompt__close")
+    ?.addEventListener("click", () => {
+      prompt.classList.remove("is-visible");
+      prompt.hidden = true;
     }, { once: true });
 }
 
@@ -1909,6 +2687,24 @@ function normalizeCartItem(rawItem) {
     name,
     price,
     qty,
+    itemType:
+      (typeof rawItem.itemType === "string" && rawItem.itemType.trim()) ||
+      menuItem?.itemType ||
+      menuItem?.item_type ||
+      "single",
+    comboItems: Array.isArray(rawItem.comboItems)
+      ? rawItem.comboItems
+      : Array.isArray(menuItem?.comboItems)
+        ? menuItem.comboItems
+        : [],
+    originalPrice: normalizeCartNumber(
+      rawItem.originalPrice,
+      Number.isFinite(Number(menuItem?.originalPrice)) ? Number(menuItem.originalPrice) : 0,
+    ),
+    savings: normalizeCartNumber(
+      rawItem.savings,
+      Number.isFinite(Number(menuItem?.savings)) ? Number(menuItem.savings) : 0,
+    ),
     image:
       (typeof rawItem.image === "string" && rawItem.image.trim()) ||
       menuItem?.image ||
@@ -1984,8 +2780,13 @@ function getItemQty(id) {
 }
 
 function addToCart(itemId) {
+  if (!isCustomerOrderingEnabled()) {
+    HotelOrderingUnavailableModal.open();
+    return false;
+  }
+
   const menuItem = findMenuItemById(itemId);
-  if (!menuItem) return;
+  if (!menuItem) return false;
 
   const existing = getCartItem(itemId);
   if (existing) {
@@ -1996,6 +2797,10 @@ function addToCart(itemId) {
       name: menuItem.name,
       price: Number(menuItem.price),
       qty: 1,
+      itemType: String(menuItem.itemType || menuItem.item_type || "single").trim() || "single",
+      comboItems: Array.isArray(menuItem.comboItems) ? menuItem.comboItems : [],
+      originalPrice: Number(menuItem.originalPrice || 0) || 0,
+      savings: Number(menuItem.savings || 0) || 0,
       image: menuItem.image,
     });
   }
@@ -2003,9 +2808,15 @@ function addToCart(itemId) {
   saveCart();
   updateCartUI();
   renderMenu(getCurrentMenuCategory());
+  return true;
 }
 
 function updateCartQty(itemId, delta) {
+  if (delta > 0 && !isCustomerOrderingEnabled()) {
+    HotelOrderingUnavailableModal.open();
+    return;
+  }
+
   const item = getCartItem(itemId);
   if (!item) return;
 
@@ -2135,8 +2946,8 @@ async function showManualUpiFallback(message) {
 
   showToast(copied ? `${message} UPI ID copied.` : message);
 }
-
-function buildOrderSummaryText({
+// Legacy duplicate retained only until the surrounding malformed text block is cleaned mechanically.
+function buildOrderSummaryTextLegacyUnused({
   customerName,
   customerPhone,
   customerAddress,
@@ -2204,6 +3015,101 @@ function buildOrderSummaryText({
     lines.push(
       ` Payment Status = ${paymentConfirmed ? "Confirmed" : "Pending"}`,
     );
+  } else if (isOnlineGateway) {
+    lines.push(` Total = ${formatCurrency(normalTotal)}`);
+    lines.push(" Payment Method = Secure Online Payment");
+    lines.push(
+      ` Payment Status = ${paymentConfirmed ? "Paid (Verified)" : "Pending Gateway Payment"}`,
+    );
+  } else {
+    lines.push(` Total = ${formatCurrency(normalTotal)}`);
+    lines.push(" Payment Method = COD");
+  }
+
+  if (note) {
+    lines.push("");
+    lines.push(` Note = ${note}`);
+  }
+
+  return lines.join("\n");
+}
+
+function buildOrderSummaryText({
+  customerName,
+  customerPhone,
+  customerAddress,
+  customerTableNote,
+  locationLink,
+  paymentMethod,
+  note,
+  paymentConfirmed,
+  items = CART,
+  orderContext = getActiveOrderContext(),
+}) {
+  const safeItems = normalizeCartItems(items);
+  const {
+    subtotal,
+    gst,
+    deliveryCharge,
+    normalTotal,
+    upiDiscountPercent,
+    gpayDiscount,
+    gpayFinalTotal,
+  } = calculatePayableAmounts(safeItems);
+
+  const isUpi = paymentMethod === "UPI";
+  const isOnlineGateway = paymentMethod === "ONLINE_GATEWAY";
+  const hotelName = getActiveHotelName();
+  const activeOrderContext = getActiveOrderContext(orderContext);
+
+  const lines = [
+    `Order Summary - ${hotelName || "Hotel"}`,
+    "----------------------",
+    `Name: ${customerName}`,
+    `Phone: ${customerPhone}`,
+  ];
+
+  if (hasDineInOrderContext(activeOrderContext)) {
+    lines.push("Order Type: Dine-in");
+    if (hasActiveOrderAddonContext(activeOrderContext)) {
+      lines.push(`Add-on For Order: #${activeOrderContext.addToOrderId}`);
+    }
+    lines.push(`Table: ${activeOrderContext.tableNumber}`);
+    lines.push(
+      `Source: ${activeOrderContext.orderSource === "qr" ? "QR code" : activeOrderContext.orderSource}`,
+    );
+    lines.push(`Table Note: ${customerTableNote || "Not provided"}`);
+  } else {
+    lines.push(`Address: ${customerAddress || "Not provided"}`);
+    lines.push(`Location: ${locationLink || "Not shared"}`);
+  }
+
+  lines.push("");
+
+  safeItems.forEach((item) => {
+    lines.push(` ${item.name} x${item.qty} = ${formatCurrency(item.price * item.qty)}`);
+    const comboSummary = buildCartComboSummary(item);
+    if (comboSummary) {
+      lines.push(`   Includes: ${comboSummary}`);
+    }
+  });
+
+  lines.push("");
+  lines.push(` Subtotal = ${formatCurrency(subtotal)}`);
+  lines.push(` GST = ${formatCurrency(gst)}`);
+  if (deliveryCharge > 0) {
+    lines.push(` Delivery Charge = ${formatCurrency(deliveryCharge)}`);
+  }
+
+  if (isUpi) {
+    lines.push(` Original Total = ${formatCurrency(normalTotal)}`);
+    lines.push(
+      ` Google Pay Discount (${formatDiscountPercent(upiDiscountPercent)}) = -${formatCurrency(gpayDiscount)}`,
+    );
+    lines.push(` Final Paid Amount = ${formatCurrency(gpayFinalTotal)}`);
+    lines.push(" Payment Method = Google Pay / UPI");
+    lines.push(` UPI ID = ${CONFIG.OWNER_UPI_ID}`);
+    lines.push(` Payment Status = ${paymentConfirmed ? "Confirmed" : "Pending"}`);
   } else if (isOnlineGateway) {
     lines.push(` Total = ${formatCurrency(normalTotal)}`);
     lines.push(" Payment Method = Secure Online Payment");
@@ -2380,10 +3286,11 @@ function bindReservationForm() {
   form.dataset.boundSubmit = "true";
 }
 
-async function postJSON(url, payload) {
+async function postJSON(url, payload, { headers = {}, credentials = "same-origin" } = {}) {
   const res = await fetch(`${CONFIG.API_BASE_URL}${url}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
+    credentials,
     body: JSON.stringify(payload),
   });
 
@@ -2407,21 +3314,175 @@ async function postJSON(url, payload) {
   return data;
 }
 
-function showToast(message) {
-  let toast = $("#globalToast");
+const SECURE_QR_PENDING_REQUEST_KEY = "secure_qr_pending_order_v1";
 
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.id = "globalToast";
-    toast.className = "global-toast";
-    document.body.appendChild(toast);
+function getSecureQrClientRequestId(items = []) {
+  const signature = JSON.stringify(items.map((item) => ({ id: String(item.id), qty: Number(item.qty) })));
+  try {
+    const stored = JSON.parse(window.sessionStorage?.getItem(SECURE_QR_PENDING_REQUEST_KEY) || "null");
+    if (stored?.signature === signature && typeof stored?.id === "string" && stored.id.length >= 12) {
+      return stored.id;
+    }
+  } catch {
+    // A fresh id below is still protected by the server's active-order transaction.
+  }
+  const id = typeof crypto?.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `qr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+  try {
+    window.sessionStorage?.setItem(SECURE_QR_PENDING_REQUEST_KEY, JSON.stringify({ signature, id }));
+  } catch {
+    // Storage is an availability aid only; it is not an authorization mechanism.
+  }
+  return id;
+}
+
+function clearSecureQrClientRequestId() {
+  try {
+    window.sessionStorage?.removeItem(SECURE_QR_PENDING_REQUEST_KEY);
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
+const ACTIVE_NOTIFICATIONS = new Map();
+const NOTIFICATION_DURATIONS = Object.freeze({
+  success: 3500,
+  info: 4500,
+  warning: 7000,
+  error: 9000
+});
+const NOTIFICATION_ICONS = Object.freeze({
+  success: "✓",
+  info: "i",
+  warning: "!",
+  error: "×"
+});
+
+function ensureNotificationRegion() {
+  let region = $("#notificationRegion");
+  if (region) return region;
+
+  region = document.createElement("div");
+  region.id = "notificationRegion";
+  region.className = "notification-region";
+  region.setAttribute("aria-live", "polite");
+  region.setAttribute("aria-atomic", "false");
+  region.setAttribute("aria-relevant", "additions text");
+  document.body.appendChild(region);
+  return region;
+}
+
+function dismissNotification(entry, { immediate = false } = {}) {
+  if (!entry?.node) return;
+  window.clearTimeout(entry.timer);
+  entry.node.classList.remove("is-visible");
+  entry.node.classList.add("is-leaving");
+  const remove = () => {
+    entry.node.remove();
+    ACTIVE_NOTIFICATIONS.delete(entry.key);
+  };
+  if (immediate || prefersReducedMotion()) remove();
+  else window.setTimeout(remove, 190);
+}
+
+function showToast(input, options = {}) {
+  const supplied = input && typeof input === "object" ? input : { message: input };
+  const config = { ...supplied, ...options };
+  const type = ["success", "info", "warning", "error"].includes(config.type)
+    ? config.type
+    : "info";
+  const message = getPublicNotificationMessage(config.message);
+  const title = String(config.title || "").trim().slice(0, 160);
+  if (!message && !title) return null;
+
+  const key = String(config.dedupeKey || `${type}::${title}::${message}`).slice(0, 512);
+  const existing = ACTIVE_NOTIFICATIONS.get(key);
+  const duration = Number.isFinite(Number(config.duration))
+    ? Math.max(0, Number(config.duration))
+    : NOTIFICATION_DURATIONS[type];
+
+  function scheduleDismiss(entry) {
+    window.clearTimeout(entry.timer);
+    if (duration > 0) {
+      entry.timer = window.setTimeout(() => dismissNotification(entry), duration);
+    }
   }
 
-  toast.textContent = message;
-  toast.classList.add("show");
+  if (existing) {
+    scheduleDismiss(existing);
+    return existing.node;
+  }
 
-  clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove("show"), 2500);
+  const region = ensureNotificationRegion();
+  while (region.children.length >= 4) {
+    const oldestNode = region.firstElementChild;
+    const oldestEntry = [...ACTIVE_NOTIFICATIONS.values()].find(
+      (entry) => entry.node === oldestNode
+    );
+    if (oldestEntry) dismissNotification(oldestEntry, { immediate: true });
+    else oldestNode?.remove();
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `notification-toast notification-toast--${type}`;
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  toast.setAttribute("aria-atomic", "true");
+
+  const icon = document.createElement("span");
+  icon.className = "notification-toast__icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = NOTIFICATION_ICONS[type];
+
+  const content = document.createElement("div");
+  content.className = "notification-toast__content";
+  if (title) {
+    const titleNode = document.createElement("p");
+    titleNode.className = "notification-toast__title";
+    titleNode.textContent = title;
+    content.appendChild(titleNode);
+  }
+  if (message) {
+    const messageNode = document.createElement("p");
+    messageNode.className = "notification-toast__message";
+    messageNode.textContent = message;
+    content.appendChild(messageNode);
+  }
+
+  const safeActionUrl = getSafePublicNavigationUrl(config.actionUrl);
+  const actionLabel = String(config.actionLabel || "").trim().slice(0, 100);
+  if (safeActionUrl && actionLabel) {
+    const action = document.createElement("a");
+    action.className = "notification-toast__action";
+    action.href = safeActionUrl;
+    action.textContent = actionLabel;
+    if (new URL(safeActionUrl, window.location.href).origin !== window.location.origin) {
+      action.target = "_blank";
+      action.rel = "noopener noreferrer";
+    }
+    content.appendChild(action);
+  }
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "notification-toast__close";
+  closeButton.setAttribute("aria-label", "Dismiss notification");
+  closeButton.textContent = "×";
+
+  toast.append(icon, content, closeButton);
+  region.appendChild(toast);
+
+  const entry = { key, node: toast, timer: 0 };
+  ACTIVE_NOTIFICATIONS.set(key, entry);
+  closeButton.addEventListener("click", () => dismissNotification(entry));
+  toast.addEventListener("mouseenter", () => window.clearTimeout(entry.timer));
+  toast.addEventListener("mouseleave", () => scheduleDismiss(entry));
+  toast.addEventListener("focusin", () => window.clearTimeout(entry.timer));
+  toast.addEventListener("focusout", () => scheduleDismiss(entry));
+
+  window.requestAnimationFrame(() => toast.classList.add("is-visible"));
+  scheduleDismiss(entry);
+  return toast;
 }
 
 function ensureMenuAssistantStyles() {
@@ -3198,14 +4259,48 @@ function getEffectiveMenuAssistantPrompts(basePrompts = [], context = getActiveO
   }, []);
 }
 
+let CART_DRAWER_LAST_FOCUSED = null;
+let CART_DRAWER_PREVIOUS_BODY_OVERFLOW = "";
+
+function getCartDrawerTriggers() {
+  return [$("#openCartBtn"), $("#floatingCartBtn")].filter(Boolean);
+}
+
+function setCartDrawerExpanded(isOpen) {
+  getCartDrawerTriggers().forEach((trigger) => {
+    trigger.setAttribute("aria-expanded", String(isOpen));
+  });
+}
+
+function getCartDrawerFocusableElements(drawer) {
+  if (!drawer) return [];
+  return $(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    drawer
+  ).filter(
+    (element) =>
+      !element.hidden &&
+      element.getAttribute("aria-hidden") !== "true" &&
+      element.getClientRects().length > 0
+  );
+}
+
 function openCartDrawer() {
   const drawer = $("#cartDrawer");
   const backdrop = $("#cartBackdrop");
   if (!drawer || !backdrop) return;
 
+  CART_DRAWER_LAST_FOCUSED = document.activeElement;
+  CART_DRAWER_PREVIOUS_BODY_OVERFLOW = document.body.style.overflow;
   drawer.hidden = false;
+  drawer.setAttribute("aria-hidden", "false");
   backdrop.hidden = false;
+  backdrop.setAttribute("aria-hidden", "false");
+  setCartDrawerExpanded(true);
   document.body.style.overflow = "hidden";
+  window.requestAnimationFrame(() => {
+    ($("#closeCartBtn") || drawer).focus({ preventScroll: true });
+  });
 }
 
 function closeCartDrawer() {
@@ -3214,9 +4309,49 @@ function closeCartDrawer() {
   if (!drawer || !backdrop) return;
 
   drawer.hidden = true;
+  drawer.setAttribute("aria-hidden", "true");
   backdrop.hidden = true;
-  document.body.style.overflow = "";
+  backdrop.setAttribute("aria-hidden", "true");
+  setCartDrawerExpanded(false);
+  document.body.style.overflow = CART_DRAWER_PREVIOUS_BODY_OVERFLOW;
+
+  const focusTarget = CART_DRAWER_LAST_FOCUSED;
+  CART_DRAWER_LAST_FOCUSED = null;
+  if (focusTarget && typeof focusTarget.focus === "function" && focusTarget.isConnected) {
+    focusTarget.focus({ preventScroll: true });
+  }
 }
+
+function handleCartDrawerKeydown(event) {
+  const drawer = $("#cartDrawer");
+  if (!drawer || drawer.hidden) return;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCartDrawer();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+  const focusable = getCartDrawerFocusableElements(drawer);
+  if (!focusable.length) {
+    event.preventDefault();
+    drawer.focus({ preventScroll: true });
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+document.addEventListener("keydown", handleCartDrawerKeydown);
 
 function updateCartUI() {
   const cartItemsWrap = $("#cartItems");
@@ -3229,6 +4364,12 @@ function updateCartUI() {
   const floatingCountEl = $("#floatingCartCount");
   const previewEl = $("#orderPreview");
   const gstPercentLabel = $("#gstPercentLabel");
+  const checkoutForm = $("#checkoutForm");
+  const checkoutSubmitBtn =
+    $("#checkoutSubmitBtn") ||
+    checkoutForm?.querySelector("button[data-checkout-submit='true']");
+  const orderingDisabled = !isCustomerOrderingEnabled();
+  const orderingConfig = getOrderingUnavailableModalConfig();
 
   const { subtotal, gst, deliveryCharge, normalTotal, gpayDiscount, gpayFinalTotal } =
     calculatePayableAmounts();
@@ -3253,6 +4394,55 @@ function updateCartUI() {
       selectedPaymentMethod === "UPI" ? gpayFinalTotal : normalTotal,
     );
   }
+
+  if (checkoutForm && checkoutSubmitBtn) {
+    let orderingNotice = document.getElementById("orderingUnavailableCheckoutNotice");
+
+    if (!orderingNotice) {
+      orderingNotice = document.createElement("div");
+      orderingNotice.id = "orderingUnavailableCheckoutNotice";
+      orderingNotice.className = "hotel-ordering-inline-notice";
+      orderingNotice.hidden = true;
+      checkoutForm.insertBefore(orderingNotice, checkoutSubmitBtn);
+    }
+
+    const submitLabel = checkoutSubmitBtn.querySelector("span");
+    const submitIcon = checkoutSubmitBtn.querySelector("i");
+
+    if (!checkoutSubmitBtn.dataset.defaultLabel && submitLabel) {
+      checkoutSubmitBtn.dataset.defaultLabel = submitLabel.textContent.trim();
+    }
+
+    if (!checkoutSubmitBtn.dataset.defaultIconClass && submitIcon) {
+      checkoutSubmitBtn.dataset.defaultIconClass = submitIcon.className;
+    }
+
+    if (orderingDisabled) {
+      orderingNotice.hidden = false;
+      orderingNotice.textContent = orderingConfig.message;
+      checkoutSubmitBtn.type = "button";
+      checkoutSubmitBtn.classList.add("hotel-ordering-disabled-btn");
+      checkoutSubmitBtn.setAttribute("aria-disabled", "true");
+      if (submitLabel) {
+        submitLabel.textContent = getOrderingUnavailableActionLabel();
+      }
+      if (submitIcon) {
+        submitIcon.className = "fas fa-clock";
+      }
+    } else {
+      orderingNotice.hidden = true;
+      orderingNotice.textContent = "";
+      checkoutSubmitBtn.type = "submit";
+      checkoutSubmitBtn.classList.remove("hotel-ordering-disabled-btn");
+      checkoutSubmitBtn.removeAttribute("aria-disabled");
+      if (submitLabel) {
+        submitLabel.textContent = checkoutSubmitBtn.dataset.defaultLabel || "Place Order";
+      }
+      if (submitIcon && checkoutSubmitBtn.dataset.defaultIconClass) {
+        submitIcon.className = checkoutSubmitBtn.dataset.defaultIconClass;
+      }
+    }
+  }
   syncTableCartResumeNotice();
   if (!cartItemsWrap) return;
 
@@ -3269,6 +4459,7 @@ function updateCartUI() {
         <div>
           <h5>${escapeHTML(item.name)}</h5>
           <span>${formatCurrency(item.price)} each</span>
+          ${buildCartItemMetaMarkup(item)}
         </div>
         <strong>${formatCurrency(item.qty * item.price)}</strong>
       </div>
@@ -3277,7 +4468,7 @@ function updateCartUI() {
         <div class="qty-inline">
           <button type="button" class="qty-btn" data-cart-minus="${escapeAttr(item.id)}" aria-label="Decrease quantity">−</button>
           <span>${item.qty}</span>
-          <button type="button" class="qty-btn" data-cart-plus="${escapeAttr(item.id)}" aria-label="Increase quantity">+</button>
+          <button type="button" class="qty-btn" data-cart-plus="${escapeAttr(item.id)}" aria-label="Increase quantity"${orderingDisabled ? " disabled" : ""}>+</button>
         </div>
 
         <button type="button" class="remove-item-btn" data-remove-item="${escapeAttr(item.id)}">
@@ -3287,6 +4478,52 @@ function updateCartUI() {
     </div>
   `,
   ).join("");
+}
+
+function buildCartComboSummary(item = {}) {
+  if (String(item?.itemType || "single").trim() !== "combo") {
+    return "";
+  }
+
+  return (Array.isArray(item?.comboItems) ? item.comboItems : [])
+    .map((comboItem) => {
+      const quantity = Number(comboItem?.quantity || 1);
+      const comboItemName = String(comboItem?.name || comboItem?.itemId || "").trim();
+      return comboItemName ? `${quantity}x ${comboItemName}` : "";
+    })
+    .filter(Boolean)
+    .join(" + ");
+}
+
+function getCartItemMetaLines(item = {}) {
+  const lines = [];
+  const comboSummary = buildCartComboSummary(item);
+  const originalPrice = Number(item?.originalPrice || 0);
+  const savings = Number(item?.savings || 0);
+  const price = Number(item?.price || 0);
+
+  if (comboSummary) {
+    lines.push(`Includes: ${comboSummary}`);
+  }
+
+  if (
+    String(item?.itemType || "single").trim() === "combo" &&
+    originalPrice > price &&
+    savings > 0
+  ) {
+    lines.push(`Was ${formatCurrency(originalPrice)} | Save ${formatCurrency(savings)}`);
+  }
+
+  return lines;
+}
+
+function buildCartItemMetaMarkup(item = {}) {
+  const lines = getCartItemMetaLines(item);
+  if (!lines.length) {
+    return "";
+  }
+
+  return `<div class="cart-item-meta">${lines.map((line) => escapeHTML(line)).join("<br>")}</div>`;
 }
 
 function bindCartDelegation() {
@@ -3321,32 +4558,20 @@ function bindCartDelegation() {
   const bar = $("#loaderBar");
   if (!loader || !bar) return;
 
-  let progress = 0;
   let finished = false;
+  bar.style.width = "12%";
 
   const finishLoader = () => {
     if (finished) return;
     finished = true;
-    clearInterval(interval);
     bar.style.width = "100%";
-
-    setTimeout(() => {
-      loader.classList.add("hidden");
-      document.body.style.overflow = "";
-      document
-        .querySelectorAll("[data-anim]")
-        .forEach((el) => el.classList.add("anim-ready"));
-    }, 180);
+    loader.classList.add("hidden");
+    loader.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+    document
+      .querySelectorAll("[data-anim]")
+      .forEach((el) => el.classList.add("anim-ready"));
   };
-
-  const interval = setInterval(() => {
-    const maxProgress = document.body.classList.contains("app-ready") ? 100 : 92;
-    progress += Math.random() * 18;
-    if (progress >= maxProgress) progress = maxProgress;
-    bar.style.width = progress + "%";
-
-    if (progress === 100) finishLoader();
-  }, 100);
 
   document.addEventListener("app:ready", finishLoader, { once: true });
   document.body.style.overflow = "hidden";
@@ -3358,33 +4583,38 @@ function bindCartDelegation() {
 (function initCursor() {
   const dot = $("#cursorDot");
   const ring = $("#cursorRing");
-  if (!dot || !ring) return;
-  if (window.innerWidth <= 768) return;
+  const supportsFinePointer = window.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches;
+  if (!dot || !ring || !supportsFinePointer || prefersReducedMotion()) return;
 
-  let mx = -100,
-    my = -100;
-  let rx = -100,
-    ry = -100;
+  let mx = -100;
+  let my = -100;
+  let rx = -100;
+  let ry = -100;
+  let frameId = 0;
 
-  document.addEventListener("mousemove", (e) => {
-    mx = e.clientX;
-    my = e.clientY;
-  });
-
-  function animCursor() {
-    rx += (mx - rx) * 0.12;
-    ry += (my - ry) * 0.12;
-
+  function animateCursor() {
+    frameId = 0;
+    rx += (mx - rx) * 0.18;
+    ry += (my - ry) * 0.18;
     dot.style.transform = `translate(${mx}px,${my}px) translate(-50%,-50%)`;
     ring.style.transform = `translate(${rx}px,${ry}px) translate(-50%,-50%)`;
-    requestAnimationFrame(animCursor);
+
+    if (Math.abs(mx - rx) > 0.15 || Math.abs(my - ry) > 0.15) {
+      frameId = requestAnimationFrame(animateCursor);
+    }
   }
 
-  animCursor();
-
-  const hoverEls = $$(
-    "a, button, .menu-tab, .gallery-item, .testi-btn, .event-card",
+  document.addEventListener(
+    "mousemove",
+    (event) => {
+      mx = event.clientX;
+      my = event.clientY;
+      if (!frameId) frameId = requestAnimationFrame(animateCursor);
+    },
+    { passive: true }
   );
+
+  const hoverEls = $$("a, button, .menu-tab, .gallery-item, .testi-btn, .event-card");
   hoverEls.forEach((el) => {
     el.addEventListener("mouseenter", () => ring.classList.add("hovered"));
     el.addEventListener("mouseleave", () => ring.classList.remove("hovered"));
@@ -3400,13 +4630,11 @@ function bindCartDelegation() {
   const links = $("#navLinks");
   if (!navbar) return;
 
-  window.addEventListener(
-    "scroll",
-    () => {
-      navbar.classList.toggle("scrolled", window.scrollY > 40);
-    },
-    { passive: true },
-  );
+  const updateNavbar = createRafThrottled(() => {
+    navbar.classList.toggle("scrolled", window.scrollY > 40);
+  });
+  window.addEventListener("scroll", updateNavbar, { passive: true });
+  updateNavbar();
 
   if (toggle && links) {
     toggle.addEventListener("click", () => {
@@ -3440,16 +4668,14 @@ function bindCartDelegation() {
   const bar = $("#scrollProgress");
   if (!bar) return;
 
-  window.addEventListener(
-    "scroll",
-    () => {
-      const total = document.documentElement.scrollHeight - window.innerHeight;
-      const pct = Math.min((window.scrollY / total) * 100, 100);
-      bar.style.width = pct + "%";
-      bar.setAttribute("aria-valuenow", Math.round(pct));
-    },
-    { passive: true },
-  );
+  const updateProgress = createRafThrottled(() => {
+    const total = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+    const pct = Math.min(Math.max((window.scrollY / total) * 100, 0), 100);
+    bar.style.width = pct + "%";
+    bar.setAttribute("aria-valuenow", Math.round(pct));
+  });
+  window.addEventListener("scroll", updateProgress, { passive: true });
+  updateProgress();
 })();
 
 /* ════════════════════════════════════════════════════════
@@ -3502,7 +4728,7 @@ initReveal();
    ════════════════════════════════════════════════════════ */
 function initMenuAndCart() {
   const grid = $("#menuGrid");
-  const tabs = $$(".menu-tab");
+  let tabs = $$(".menu-tab");
   const searchInput = $("#menuSearchInput");
   const clearSearchBtn = $("#menuClearSearch");
   const scopeButtons = $$(".menu-scope-btn");
@@ -3518,6 +4744,7 @@ function initMenuAndCart() {
   const closeCartBtn = $("#closeCartBtn");
   const cartBackdrop = $("#cartBackdrop");
   const checkoutForm = $("#checkoutForm");
+  const checkoutSubmitBtn = checkoutForm?.querySelector('button[type="submit"]');
   const upiBox = $("#upiBox");
   const orderPreview = $("#orderPreview");
 
@@ -3532,7 +4759,26 @@ function initMenuAndCart() {
   const upiManualAmount = $("#upiManualAmount");
   const orderUpiId = $("#orderUpiId");
 
+  if (checkoutSubmitBtn) {
+    checkoutSubmitBtn.id = checkoutSubmitBtn.id || "checkoutSubmitBtn";
+    checkoutSubmitBtn.dataset.checkoutSubmit = "true";
+
+    if (checkoutSubmitBtn.dataset.boundOrderingClick !== "true") {
+      checkoutSubmitBtn.addEventListener("click", () => {
+        if (!isCustomerOrderingEnabled()) {
+          HotelOrderingUnavailableModal.open();
+        }
+      });
+      checkoutSubmitBtn.dataset.boundOrderingClick = "true";
+    }
+  }
+
   if (!grid || !getMenuCategories().length) return;
+
+  const tabsWrap =
+    grid.closest(".menu-shell")?.querySelector(".menu-tabs") ||
+    grid.closest(".section")?.querySelector(".menu-tabs") ||
+    $(".menu-tabs");
 
   const menuAssistantThemeConfig = getThemeAiAssistantConfig();
 
@@ -3550,8 +4796,64 @@ function initMenuAndCart() {
     mains: "Main Course",
     desserts: "Dessert",
     drinks: "Beverage",
+    combos: "Combo",
   };
   const availableCategories = getMenuCategories();
+
+  function getFallbackCategoryLabel(category = "") {
+    if (CATEGORY_LABELS[category]) {
+      return CATEGORY_LABELS[category];
+    }
+
+    const normalized = String(category || "")
+      .trim()
+      .replace(/[-_]+/g, " ");
+
+    if (!normalized) {
+      return "Menu";
+    }
+
+    return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  function ensureDynamicMenuTabs() {
+    if (!tabsWrap) {
+      return;
+    }
+
+    const existingCategories = new Set(
+      tabs.map((tab) => String(tab.dataset.cat || "").trim()).filter(Boolean)
+    );
+
+    availableCategories.forEach((category) => {
+      if (!category || existingCategories.has(category)) {
+        return;
+      }
+
+      const nextTab = document.createElement("button");
+      nextTab.type = "button";
+      nextTab.className = "menu-tab";
+      nextTab.dataset.cat = category;
+      nextTab.setAttribute("role", "tab");
+      nextTab.setAttribute("aria-selected", "false");
+      nextTab.setAttribute("aria-controls", "menuGrid");
+
+      const icon = document.createElement("i");
+      icon.className = "fas fa-utensils";
+      icon.setAttribute("aria-hidden", "true");
+
+      const label = document.createElement("span");
+      label.textContent = getFallbackCategoryLabel(category);
+
+      nextTab.append(icon, document.createTextNode(" "), label);
+      tabsWrap.appendChild(nextTab);
+    });
+
+    tabs = $$(".menu-tab");
+  }
+
+  ensureDynamicMenuTabs();
+
   const tabCategoryOrder = tabs
     .map((tab) => tab.dataset.cat)
     .filter(Boolean);
@@ -3621,6 +4923,9 @@ function initMenuAndCart() {
 
   const ALL_ITEMS = flattenMenuData().map((item) => {
     const categoryLabel = getCategoryLabel(item.category);
+    const comboChildNames = Array.isArray(item.comboItems)
+      ? item.comboItems.map((comboItem) => comboItem?.name).filter(Boolean)
+      : [];
     const normalizedTags = [
       item.tag,
       item.badge,
@@ -3642,7 +4947,7 @@ function initMenuAndCart() {
         ),
       ),
       searchBlob:
-        `${item.name} ${item.desc} ${item.tag || ""} ${item.badge || ""} ${categoryLabel}`.toLowerCase(),
+        `${item.name} ${item.desc} ${item.tag || ""} ${item.badge || ""} ${categoryLabel} ${comboChildNames.join(" ")}`.toLowerCase(),
     };
   });
 
@@ -5194,13 +6499,43 @@ function initMenuAndCart() {
   }
 
 
+  function getPaymentMethodAvailability() {
+    const ordering = getHotelOrderingState();
+    return {
+      COD: ordering.cashOnDeliveryEnabled !== false,
+      UPI:
+        ordering.manualUpiPaymentEnabled !== false &&
+        Boolean(String(CONFIG.OWNER_UPI_ID || "").trim()),
+      ONLINE_GATEWAY: ordering.secureOnlinePaymentEnabled !== false
+    };
+  }
+
+  function syncPaymentMethodAvailability() {
+    const availability = getPaymentMethodAvailability();
+    const inputs = $$('input[name="paymentMethod"]', checkoutForm || document);
+
+    inputs.forEach((input) => {
+      const enabled = availability[input.value] !== false;
+      input.disabled = !enabled;
+      const option = input.closest("label.payment-option");
+      if (option) option.hidden = !enabled;
+    });
+
+    const checked = inputs.find((input) => input.checked && !input.disabled);
+    if (!checked) {
+      const fallback = inputs.find((input) => !input.disabled);
+      if (fallback) fallback.checked = true;
+    }
+  }
+
   function getSelectedPaymentMethod() {
-    return $('input[name="paymentMethod"]:checked')?.value || "COD";
+    return $('input[name="paymentMethod"]:checked:not(:disabled)')?.value || "";
   }
 
   function isPaymentGatewayBridgeEnabled(paymentMethod = getSelectedPaymentMethod()) {
     const provider = String(CONFIG.PAYMENT_GATEWAY_PROVIDER || "").trim().toLowerCase();
     return (
+      getHotelOrderingState().secureOnlinePaymentEnabled !== false &&
       CONFIG.PAYMENT_GATEWAY_ENABLED === true &&
       provider === "razorpay" &&
       paymentMethod === "ONLINE_GATEWAY"
@@ -5281,7 +6616,13 @@ function initMenuAndCart() {
   }
 
   function ensurePaymentGatewayOption() {
-    if (!checkoutForm || !CONFIG.PAYMENT_GATEWAY_ENABLED) return null;
+    if (
+      !checkoutForm ||
+      !CONFIG.PAYMENT_GATEWAY_ENABLED ||
+      getHotelOrderingState().secureOnlinePaymentEnabled === false
+    ) {
+      return null;
+    }
 
     const paymentBox = $(".payment-box", checkoutForm);
     const upiInput = $('input[name="paymentMethod"][value="UPI"]', paymentBox || checkoutForm);
@@ -5326,7 +6667,9 @@ function initMenuAndCart() {
     const gatewayOption = $("#paymentGatewayOption", checkoutForm || document);
     const gatewayBox = $("#paymentGatewayBox", checkoutForm || document);
     const gatewayInput = gatewayOption?.querySelector('input[name="paymentMethod"]');
-    const shouldShowGatewayOption = CONFIG.PAYMENT_GATEWAY_ENABLED === true;
+    const shouldShowGatewayOption =
+      CONFIG.PAYMENT_GATEWAY_ENABLED === true &&
+      getHotelOrderingState().secureOnlinePaymentEnabled !== false;
     const isCheckoutReady = isPaymentGatewayCheckoutReady("ONLINE_GATEWAY");
     const isGatewaySelected = paymentMethod === "ONLINE_GATEWAY";
 
@@ -5805,6 +7148,7 @@ function initMenuAndCart() {
   }
 
   function updatePaymentUI() {
+    syncPaymentMethodAvailability();
     const paymentMethod = getSelectedPaymentMethod();
     const isUpi = paymentMethod === "UPI";
     const isGatewayBridgeReady = isPaymentGatewayBridgeEnabled(paymentMethod);
@@ -6075,8 +7419,9 @@ function initMenuAndCart() {
     if (!hasDineInOrderContext()) {
       getUserLiveLocation();
     }
-    addToCart(itemId);
-    showToast("Added to cart");
+    if (addToCart(itemId)) {
+      showToast("Added to cart");
+    }
   }
 
   function attachDynamicHoverAndTilt() {
@@ -6113,7 +7458,24 @@ function initMenuAndCart() {
 
   function createMenuCard(item, index, showCategoryPill) {
     const qty = getItemQty(item.id);
+    const orderingDisabled = !isCustomerOrderingEnabled();
     const inlineTags = item.normalizedTags.slice(0, 3);
+    const comboItems = Array.isArray(item.comboItems) ? item.comboItems : [];
+    const comboSummary =
+      item.itemType === "combo" && comboItems.length
+        ? comboItems
+            .map((comboItem) => {
+              const quantity = Number(comboItem.quantity || 1);
+              const comboItemName = String(comboItem.name || comboItem.itemId || "").trim();
+              return `${quantity}x ${comboItemName}`;
+            })
+            .filter(Boolean)
+            .join(" + ")
+        : "";
+    const showComboSavings =
+      item.itemType === "combo" &&
+      Number(item.originalPrice || 0) > Number(item.price || 0) &&
+      Number(item.savings || 0) > 0;
 
     return `
       <article class="menu-card" role="article" style="animation-delay:${index * 0.05}s">
@@ -6131,6 +7493,11 @@ function initMenuAndCart() {
           </div>
 
           <p class="menu-card-desc">${escapeHTML(item.desc || "")}</p>
+          ${
+            comboSummary
+              ? `<p class="menu-card-desc">Includes: ${escapeHTML(comboSummary)}</p>`
+              : ""
+          }
 
           ${
             inlineTags.length
@@ -6144,12 +7511,40 @@ function initMenuAndCart() {
 
           <div class="menu-card-footer">
             <span class="menu-card-price">${formatCurrency(item.price)}</span>
-            ${item.tag ? `<span class="menu-card-tag">${escapeHTML(item.tag)}</span>` : ""}
+            ${
+              item.tag
+                ? `<span class="menu-card-tag">${escapeHTML(item.tag)}</span>`
+                : item.itemType === "combo"
+                  ? `<span class="menu-card-tag">Combo</span>`
+                  : ""
+            }
           </div>
+
+          ${
+            showComboSavings
+              ? `
+            <div class="menu-card-tags">
+              <span class="menu-inline-tag">Was ${escapeHTML(formatCurrency(item.originalPrice || 0))}</span>
+              <span class="menu-inline-tag">Save ${escapeHTML(formatCurrency(item.savings || 0))}</span>
+            </div>
+          `
+              : ""
+          }
 
           <div class="menu-card-actions">
             ${
-              qty > 0
+              orderingDisabled
+                ? `
+                  <button
+                    type="button"
+                    class="btn btn-primary menu-add-btn hotel-ordering-disabled-btn"
+                    data-ordering-disabled="true"
+                    aria-disabled="true"
+                  >
+                    ${escapeHTML(getOrderingUnavailableActionLabel())}
+                  </button>
+                `
+                : qty > 0
                 ? `
                   <div class="qty-control">
                     <button type="button" class="qty-btn" data-minus="${escapeAttr(item.id)}" aria-label="Decrease quantity">−</button>
@@ -6357,6 +7752,7 @@ function initMenuAndCart() {
     floatingCartBtn.addEventListener("click", openCartDrawer);
 
   ensurePaymentGatewayOption();
+  syncPaymentMethodAvailability();
 
   $$('input[name="paymentMethod"]').forEach((input) => {
     input.addEventListener("change", updatePaymentUI);
@@ -6402,6 +7798,11 @@ function initMenuAndCart() {
     const btn = e.target.closest("button");
     if (!btn) return;
 
+    if (btn.dataset.orderingDisabled) {
+      HotelOrderingUnavailableModal.open();
+      return;
+    }
+
     if (btn.dataset.add) {
       queueMenuGridFocusRestore(btn.dataset.add, ["plus", "remove", "add"]);
       addToCartWithLocation(btn.dataset.add);
@@ -6429,6 +7830,11 @@ function initMenuAndCart() {
 async function handleCheckoutSubmit(e) {
   e.preventDefault();
 
+  if (!isCustomerOrderingEnabled()) {
+    HotelOrderingUnavailableModal.open();
+    return;
+  }
+
   const normalizedCart = normalizeCartItems(CART);
   const hotelName = getActiveHotelName();
   const payableAmounts = calculatePayableAmounts(normalizedCart);
@@ -6448,10 +7854,14 @@ async function handleCheckoutSubmit(e) {
   );
   const note = document.getElementById("orderNote")?.value.trim() || "";
 
-  const paymentMethod = 
-    document.querySelector('input[name="paymentMethod"]:checked')?.value || "COD";
+  const paymentMethod = getSelectedPaymentMethod();
 
   const paymentConfirmed = !!document.getElementById("orderPaymentConfirmed")?.checked;
+
+  if (!paymentMethod) {
+    showToast("No payment method is currently available for this hotel. Please contact the hotel.");
+    return;
+  }
 
   if (paymentMethod === "ONLINE_GATEWAY" && !isPaymentGatewayCheckoutReady(paymentMethod)) {
     showToast("Secure online payment is not live yet. Please use COD or Google Pay / UPI.");
@@ -6507,9 +7917,10 @@ async function handleCheckoutSubmit(e) {
   if (orderPreview) orderPreview.textContent = summaryText;
 
   const isAddonOrder = hasActiveOrderAddonContext(orderContext);
+  const isSecureQrOrder = orderContext.secureQr === true && !!orderContext.opaqueQrToken;
 
-  if (isAddonOrder && paymentMethod === "ONLINE_GATEWAY") {
-    showToast("Secure online payment is not available for add-on items yet. Please use COD or Google Pay / UPI.");
+  if ((isAddonOrder || isSecureQrOrder) && paymentMethod === "ONLINE_GATEWAY") {
+    showToast("Secure online payment is not available for this table item request yet. Please use COD or Google Pay / UPI.");
     return;
   }
 
@@ -6528,6 +7939,13 @@ async function handleCheckoutSubmit(e) {
         orderContext
       });
     } catch (error) {
+      if (isOrderingDisabledApiError(error)) {
+        updateHotelOrderingState(error.response?.ordering || null);
+        updateCartUI();
+        renderMenu(MENU_STATE.activeCategory);
+        HotelOrderingUnavailableModal.open(error.response?.ordering || null);
+        return;
+      }
       console.error("Secure payment checkout failed:", error);
       showToast(error.message || "Secure payment failed. Please use COD or Google Pay / UPI.");
     }
@@ -6549,10 +7967,23 @@ async function handleCheckoutSubmit(e) {
         qrContextToken: orderContext.qrContextToken || ""
       }
     : undefined;
-  const endpoint = isAddonOrder
-    ? `/api/order-tracking/${encodeURIComponent(getActiveHotelSlug())}/${encodeURIComponent(orderContext.addToOrderId)}/add-items`
-    : "/api/orders";
-  const payload = isAddonOrder
+  const endpoint = isSecureQrOrder
+    ? `/api/public/qr/${encodeURIComponent(orderContext.opaqueQrToken)}/orders`
+    : isAddonOrder
+      ? `/api/order-tracking/${encodeURIComponent(getActiveHotelSlug())}/${encodeURIComponent(orderContext.addToOrderId)}/add-items`
+      : "/api/orders";
+  const payload = isSecureQrOrder
+    ? {
+        clientRequestId: getSecureQrClientRequestId(orderItemsPayload),
+        expectedSessionVersion: orderContext.qrSessionVersion,
+        customerName,
+        customerPhone,
+        note,
+        paymentMethod: paymentMethodLabel,
+        paymentConfirmed,
+        items: orderItemsPayload.map((item) => ({ menuItemId: item.id, quantity: item.qty }))
+      }
+    : isAddonOrder
     ? {
         token: orderContext.addToken,
         note,
@@ -6583,8 +8014,16 @@ async function handleCheckoutSubmit(e) {
   let tracking = null;
   let usedDirectWhatsAppFallback = false;
 
+  let secureQrSubmissionReference = "";
   try {
-    const result = await postJSON(endpoint, payload);
+    const result = await postJSON(
+      endpoint,
+      payload,
+      isSecureQrOrder
+        ? { credentials: "include", headers: { "X-QR-CSRF-Token": orderContext.qrCsrfToken } }
+        : undefined
+    );
+    if (isSecureQrOrder) clearSecureQrClientRequestId();
     const approvedSummaryText =
       result?.preview || result?.order?.whatsapp_message || summaryText;
     const activeHotelWhatsappLink = cleanPhone(CONFIG.OWNER_WHATSAPP_NUMBER)
@@ -6592,7 +8031,17 @@ async function handleCheckoutSubmit(e) {
       : "";
     waLink = result.ownerWhatsappLink || activeHotelWhatsappLink || ownerWhatsAppLink(approvedSummaryText);
     tracking = result?.trackingReady ? result.tracking : null;
+    if (isSecureQrOrder) {
+      secureQrSubmissionReference = String(result?.order?.publicReference || "").trim();
+    }
   } catch (error) {
+    if (isOrderingDisabledApiError(error)) {
+      updateHotelOrderingState(error.response?.ordering || null);
+      updateCartUI();
+      renderMenu(MENU_STATE.activeCategory);
+      HotelOrderingUnavailableModal.open(error.response?.ordering || null);
+      return;
+    }
     if (error?.status >= 400 && error.status < 500) {
       showToast(error.message || "Order details are invalid. Please refresh and try again.");
       return;
@@ -6630,12 +8079,18 @@ async function handleCheckoutSubmit(e) {
   // Finally open WhatsApp with the summary
   openWhatsAppSafely(waLink);
 
-  showOrderTrackingPrompt(tracking);
+  if (isSecureQrOrder) {
+    showSecureQrOrderStatusPrompt(secureQrSubmissionReference);
+  } else {
+    showOrderTrackingPrompt(tracking);
+  }
   showToast(
     usedDirectWhatsAppFallback
       ? "Backend save failed. Order opened in WhatsApp only, so tracking is not available for this order."
       : tracking
       ? "Order saved. Tracking link is ready."
+      : isSecureQrOrder
+      ? "Table order received. Live status is ready."
       : "Order sent to WhatsApp successfully!"
   );
 }
@@ -6652,6 +8107,7 @@ function bindCheckoutForm() {
   updateCartUI();
   bindCartDelegation();
   WhatsAppFallback.bind();
+  HotelOrderingUnavailableModal.bind();
   syncOrderContextUI();
   renderMenu(MENU_STATE.activeCategory, { resetVisible: true });
   updatePaymentUI();
@@ -6682,17 +8138,18 @@ function bindCheckoutForm() {
     card.setAttribute("aria-label", `Testimonial ${i + 1}`);
     card.innerHTML = `
       <div class="testi-quote" aria-hidden="true">"</div>
-      <p class="testi-text">${t.text}</p>
+      <p class="testi-text">${escapeHTML(t.text)}</p>
       <div class="testi-author">
         <div class="testi-avatar">
-          <img src="${t.avatar}" alt="${t.name}" loading="lazy" />
+          <img class="review-card__avatar" data-review-avatar src="${escapeAttr(getReviewAvatarSource(t.avatar))}" alt="" width="96" height="96" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
         </div>
         <div class="testi-stars" aria-label="${t.stars} out of 5 stars">${stars}</div>
-        <strong class="testi-name">${t.name}</strong>
-        <span class="testi-role">${t.role}</span>
+        <strong class="testi-name">${escapeHTML(t.name)}</strong>
+        <span class="testi-role">${escapeHTML(t.role)}</span>
       </div>
     `;
     track.appendChild(card);
+    window.ReviewAvatar?.bindReviewAvatars(card);
   });
 
   TESTIMONIALS_DATA.forEach((_, i) => {
@@ -7081,27 +8538,23 @@ async function sendToSheet(data) {
 (function initParallax() {
   const main = $(".about-img-main");
   const sub = $(".about-img-sub");
-  if (!main || !sub) return;
-  if (window.innerWidth < 768) return;
+  if (!main || !sub || window.innerWidth < 768 || prefersReducedMotion()) return;
 
-  window.addEventListener(
-    "scroll",
-    () => {
-      const aboutSection = $("#about");
-      if (!aboutSection) return;
+  const updateParallax = createRafThrottled(() => {
+    const aboutSection = $("#about");
+    if (!aboutSection) return;
+    const rect = aboutSection.getBoundingClientRect();
+    const windowHeight = window.innerHeight;
+    if (rect.top >= windowHeight || rect.bottom <= 0) return;
 
-      const rect = aboutSection.getBoundingClientRect();
-      const windowH = window.innerHeight;
+    const progress = (windowHeight - rect.top) / (windowHeight + rect.height);
+    const shift = (progress - 0.5) * 40;
+    main.style.transform = `translateY(${shift * 0.5}px)`;
+    sub.style.transform = `translateY(${-shift * 0.7}px)`;
+  });
 
-      if (rect.top < windowH && rect.bottom > 0) {
-        const progress = (windowH - rect.top) / (windowH + rect.height);
-        const shift = (progress - 0.5) * 40;
-        main.style.transform = `translateY(${shift * 0.5}px)`;
-        sub.style.transform = `translateY(${-shift * 0.7}px)`;
-      }
-    },
-    { passive: true },
-  );
+  window.addEventListener("scroll", updateParallax, { passive: true });
+  updateParallax();
 })();
 
 /* ════════════════════════════════════════════════════════
@@ -7137,17 +8590,35 @@ async function sendToSheet(data) {
 (function initHeroGradient() {
   const hero = $(".hero");
   const overlay = $(".hero-overlay");
-  if (!hero || !overlay) return;
+  if (!hero || !overlay || prefersReducedMotion()) return;
 
   let hue = 30;
-  setInterval(() => {
-    hue += 0.05;
-    const r = 15 + Math.sin(hue * 0.1) * 3;
-    overlay.style.background = `linear-gradient(${135 + Math.sin(hue * 0.05) * 10}deg,
-      rgba(${r},12,8,0.85) 0%,
-      rgba(${r},12,8,0.55) 60%,
-      rgba(${r},12,8,0.75) 100%)`;
-  }, 50);
+  let intervalId = 0;
+  const stop = () => {
+    if (intervalId) window.clearInterval(intervalId);
+    intervalId = 0;
+  };
+  const start = () => {
+    if (intervalId || document.hidden) return;
+    intervalId = window.setInterval(() => {
+      hue += 0.25;
+      const red = 15 + Math.sin(hue * 0.1) * 3;
+      overlay.style.background = `linear-gradient(${135 + Math.sin(hue * 0.05) * 10}deg,
+        rgba(${red},12,8,0.85) 0%,
+        rgba(${red},12,8,0.55) 60%,
+        rgba(${red},12,8,0.75) 100%)`;
+    }, 250);
+  };
+
+  const observer = new IntersectionObserver(([entry]) => {
+    if (entry?.isIntersecting) start();
+    else stop();
+  });
+  observer.observe(hero);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stop();
+    else if (hero.getBoundingClientRect().bottom > 0) start();
+  });
 })();
 
 /* ════════════════════════════════════════════════════════
@@ -7195,36 +8666,7 @@ async function sendToSheet(data) {
 /* ════════════════════════════════════════════════════════
    20. ACTIVE LINK STYLE
    ════════════════════════════════════════════════════════ */
-(function initDynamicStyles() {
-  const style = document.createElement("style");
-  style.textContent = `
-    .nav-link.active-link { color: var(--gold) !important; }
-    .nav-link.active-link::after { width: 100% !important; }
-    .navbar.scrolled .nav-link.active-link { color: var(--gold) !important; }
 
-    .global-toast {
-      position: fixed;
-      left: 50%;
-      bottom: 20px;
-      transform: translateX(-50%) translateY(20px);
-      background: rgba(12, 12, 12, 0.92);
-      color: #fff;
-      padding: 12px 18px;
-      border-radius: 999px;
-      z-index: 9999;
-      font-size: 14px;
-      opacity: 0;
-      pointer-events: none;
-      transition: 0.3s ease;
-    }
-
-    .global-toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  `;
-  document.head.appendChild(style);
-})();
 
 /* ════════════════════════════════════════════════════════
    21. WHATSAPP QUICK POPUP
@@ -7236,13 +8678,15 @@ async function sendToSheet(data) {
   if (!waBtn || !waPopup) return;
 
   waBtn.addEventListener("click", () => {
-    waPopup.style.display =
-      waPopup.style.display === "block" ? "none" : "block";
+    const isOpen = waPopup.style.display !== "block";
+    waPopup.style.display = isOpen ? "block" : "none";
+    waBtn.setAttribute("aria-expanded", String(isOpen));
   });
 
   document.addEventListener("click", (e) => {
     if (!waPopup.contains(e.target) && !waBtn.contains(e.target)) {
       waPopup.style.display = "none";
+      waBtn.setAttribute("aria-expanded", "false");
     }
   });
 
@@ -7645,6 +9089,1093 @@ function renderLocalBootFailureBanner(error) {
   bannerHost.prepend(banner);
 }
 
+function getPublicRoomsApiBase() {
+  return `${String(CONFIG.API_BASE_URL || "").replace(/\/+$/, "")}/api/public/rooms`;
+}
+
+function getPublicRoomsHotelSlug() {
+  return (
+    window.APP_STATE?.activeHotelSlug ||
+    (typeof getHotelSlugFromQuery === "function" ? getHotelSlugFromQuery() : "") ||
+    ""
+  ).trim();
+}
+
+function setPublicRoomsSectionVisible(isVisible) {
+  const section = document.getElementById("rooms");
+  const navItems = document.querySelectorAll("[data-room-booking-nav]");
+
+  if (section) {
+    section.hidden = !isVisible;
+  }
+
+  navItems.forEach((item) => {
+    item.hidden = !isVisible;
+  });
+}
+
+function setPublicRoomsStatus(message = "", tone = "muted") {
+  const statusEl = document.getElementById("publicRoomsStatus");
+  if (!statusEl) return;
+
+  statusEl.textContent = message;
+  statusEl.dataset.tone = tone;
+}
+
+const ROOM_BOOKING_CONFLICT_CODE = "ROOM_ALREADY_BOOKED";
+const ROOM_BOOKING_CONFLICT_MESSAGE =
+  "This room is already booked for selected dates. Please choose another room or date.";
+
+function getRoomBookingErrorMessage(error, fallback = "Unable to submit booking request.") {
+  return error?.code === ROOM_BOOKING_CONFLICT_CODE
+    ? ROOM_BOOKING_CONFLICT_MESSAGE
+    : error?.message || fallback;
+}
+
+function setPublicBookingStatus(message = "", tone = "muted") {
+  const summaryEl = document.getElementById("publicBookingSummary");
+  if (!summaryEl || !message) return;
+
+  const existingStatus = summaryEl.querySelector("[data-public-booking-status]");
+  if (existingStatus) {
+    existingStatus.remove();
+  }
+
+  const statusEl = document.createElement("p");
+  statusEl.dataset.publicBookingStatus = "true";
+  statusEl.dataset.tone = tone;
+  statusEl.className = "room-booking-status";
+  statusEl.textContent = message;
+  summaryEl.append(statusEl);
+}
+
+function toPublicDateInputValue(date) {
+  const value = parsePublicDateValue(date);
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parsePublicDateValue(value) {
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  const textValue = String(value || "").trim();
+  const match = textValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+
+  return new Date(value);
+}
+
+function addPublicDateDays(value, days) {
+  const date = parsePublicDateValue(value);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function normalizePublicRoomArray(value) {
+  if (Array.isArray(value)) return value;
+
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+const PUBLIC_ROOM_GALLERY_STATE = {
+  room: null,
+  images: [],
+  index: 0,
+  trigger: null,
+  touchStartX: null,
+  touchStartY: null,
+  scrollSnapshot: null,
+  returnFocusOnClose: true,
+  preloadedUrls: new Set()
+};
+
+function normalizePublicRoomImageUrl(value = "") {
+  const candidate = String(value || "").trim();
+  if (!candidate || candidate.startsWith("//")) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(candidate) && !/^https?:\/\//i.test(candidate)) return "";
+  const normalized = normalizeImagePath(candidate);
+  try {
+    const parsed = new URL(normalized, window.location.href);
+    if (parsed.pathname.includes("/storage/v1/render/image/public/")) {
+      parsed.pathname = parsed.pathname.replace("/storage/v1/render/image/public/", "/storage/v1/object/public/");
+      parsed.search = "";
+      return parsed.href;
+    }
+  } catch (_error) {
+    return "";
+  }
+  return normalized;
+}
+
+function getPublicRoomGalleryImages(room = {}) {
+  const managed = normalizePublicRoomArray(room.galleryImages);
+  const source = managed.length ? managed : normalizePublicRoomArray(room.images);
+  const roomTitle = room.title || room.roomType?.name || room.roomNumber || "Room";
+  return source.map((value, index) => {
+    const image = value && typeof value === "object" ? value : {};
+    const originalUrl = normalizePublicRoomImageUrl(
+      typeof value === "string"
+        ? value
+        : image.originalUrl || image.url || image.src || image.path || ""
+    );
+    if (!originalUrl) return null;
+    return {
+      id: image.id || `legacy-${index + 1}`,
+      originalUrl,
+      optimizedUrl: normalizePublicRoomImageUrl(image.optimizedUrl) || originalUrl,
+      cardUrl:
+        normalizePublicRoomImageUrl(image.cardUrl || image.optimizedUrl) || originalUrl,
+      thumbnailUrl:
+        normalizePublicRoomImageUrl(
+          image.thumbnailUrl || image.cardUrl || image.optimizedUrl
+        ) || originalUrl,
+      hasOptimizedThumbnail: Boolean(
+        normalizePublicRoomImageUrl(
+          image.thumbnailUrl || image.cardUrl || image.optimizedUrl
+        ) &&
+        normalizePublicRoomImageUrl(
+          image.thumbnailUrl || image.cardUrl || image.optimizedUrl
+        ) !== originalUrl
+      ),
+      altText: String(image.altText || image.alt || `${roomTitle} photo ${index + 1}`),
+      caption: String(image.caption || "")
+    };
+  }).filter(Boolean);
+}
+
+function getPublicRoomImage(room = {}) {
+  return getPublicRoomGalleryImages(room)[0]?.cardUrl || "";
+}
+
+function getPublicRoomGalleryElements() {
+  return {
+    dialog: document.getElementById("publicRoomGalleryDialog"),
+    stage: document.getElementById("publicRoomGalleryStage"),
+    image: document.getElementById("publicRoomGalleryImage"),
+    loading: document.getElementById("publicRoomGalleryLoading"),
+    error: document.getElementById("publicRoomGalleryError"),
+    title: document.getElementById("publicRoomGalleryTitle"),
+    caption: document.getElementById("publicRoomGalleryCaption"),
+    counter: document.getElementById("publicRoomGalleryCounter"),
+    thumbnails: document.getElementById("publicRoomGalleryThumbnails"),
+    previous: document.getElementById("publicRoomGalleryPrevious"),
+    next: document.getElementById("publicRoomGalleryNext")
+  };
+}
+
+function lockPublicRoomGalleryScroll() {
+  if (PUBLIC_ROOM_GALLERY_STATE.scrollSnapshot) return;
+  const body = document.body;
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const scrollbarGap = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+  const computedPaddingRight = Number.parseFloat(getComputedStyle(body).paddingRight) || 0;
+
+  PUBLIC_ROOM_GALLERY_STATE.scrollSnapshot = {
+    scrollX,
+    scrollY,
+    position: body.style.position,
+    top: body.style.top,
+    left: body.style.left,
+    right: body.style.right,
+    width: body.style.width,
+    overflow: body.style.overflow,
+    paddingRight: body.style.paddingRight
+  };
+
+  body.classList.add("room-gallery-is-open");
+  body.style.position = "fixed";
+  body.style.top = `-${scrollY}px`;
+  body.style.left = `-${scrollX}px`;
+  body.style.right = "0";
+  body.style.width = "100%";
+  body.style.overflow = "hidden";
+  if (scrollbarGap) {
+    body.style.paddingRight = `${computedPaddingRight + scrollbarGap}px`;
+  }
+}
+
+function unlockPublicRoomGalleryScroll() {
+  const snapshot = PUBLIC_ROOM_GALLERY_STATE.scrollSnapshot;
+  if (!snapshot) return;
+  const body = document.body;
+
+  body.classList.remove("room-gallery-is-open");
+  body.style.position = snapshot.position;
+  body.style.top = snapshot.top;
+  body.style.left = snapshot.left;
+  body.style.right = snapshot.right;
+  body.style.width = snapshot.width;
+  body.style.overflow = snapshot.overflow;
+  body.style.paddingRight = snapshot.paddingRight;
+  PUBLIC_ROOM_GALLERY_STATE.scrollSnapshot = null;
+  window.scrollTo(snapshot.scrollX, snapshot.scrollY);
+}
+
+function setPublicRoomGalleryLoading(isLoading) {
+  const { stage, image, loading, error } = getPublicRoomGalleryElements();
+  stage?.setAttribute("aria-busy", String(!!isLoading));
+  if (loading) loading.hidden = !isLoading;
+  if (error && isLoading) error.hidden = true;
+  if (image && isLoading) {
+    image.classList.remove("is-ready", "is-error");
+  }
+}
+
+function showPublicRoomGalleryImageError() {
+  const { stage, image, loading, error } = getPublicRoomGalleryElements();
+  stage?.setAttribute("aria-busy", "false");
+  if (loading) loading.hidden = true;
+  if (error) error.hidden = false;
+  image?.classList.remove("is-ready");
+  image?.classList.add("is-error");
+}
+
+function handlePublicRoomGalleryImageLoaded() {
+  const { stage, image, loading, error } = getPublicRoomGalleryElements();
+  stage?.setAttribute("aria-busy", "false");
+  if (loading) loading.hidden = true;
+  if (error) error.hidden = true;
+  image?.classList.remove("is-error");
+  image?.classList.add("is-ready");
+}
+
+function preloadPublicRoomGalleryAdjacentImages() {
+  const images = PUBLIC_ROOM_GALLERY_STATE.images;
+  const total = images.length;
+  if (total < 2 || navigator.connection?.saveData) return;
+
+  const adjacentIndexes = [
+    (PUBLIC_ROOM_GALLERY_STATE.index - 1 + total) % total,
+    (PUBLIC_ROOM_GALLERY_STATE.index + 1) % total
+  ];
+
+  [...new Set(adjacentIndexes)].forEach((index) => {
+    const item = images[index];
+    const source = normalizePublicRoomImageUrl(
+      item?.optimizedUrl || item?.originalUrl
+    );
+    if (!source || PUBLIC_ROOM_GALLERY_STATE.preloadedUrls.has(source)) return;
+    PUBLIC_ROOM_GALLERY_STATE.preloadedUrls.add(source);
+    const preload = new Image();
+    preload.decoding = "async";
+    preload.src = source;
+  });
+}
+
+function keepPublicRoomGalleryThumbnailVisible() {
+  const { thumbnails, dialog } = getPublicRoomGalleryElements();
+  if (!dialog?.open || !thumbnails || thumbnails.hidden) return;
+  const active = thumbnails.querySelector('[aria-current="true"]');
+  active?.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+    block: "nearest",
+    inline: "center"
+  });
+}
+
+function renderPublicRoomGalleryThumbnails() {
+  const { thumbnails } = getPublicRoomGalleryElements();
+  if (!thumbnails) return;
+  const images = PUBLIC_ROOM_GALLERY_STATE.images;
+  const canUseThumbnailStrip =
+    images.length > 1 && images.every((item) => item.hasOptimizedThumbnail);
+  const signature = images
+    .map((item) => `${item.id}:${item.thumbnailUrl || item.cardUrl || item.originalUrl}`)
+    .join("|");
+
+  thumbnails.hidden = !canUseThumbnailStrip;
+  if (!canUseThumbnailStrip) {
+    thumbnails.innerHTML = "";
+    thumbnails.dataset.gallerySignature = "";
+    return;
+  }
+
+  if (thumbnails.dataset.gallerySignature !== signature) {
+    thumbnails.innerHTML = images.map((item, index) => `
+      <button
+        type="button"
+        role="option"
+        data-public-room-gallery-index="${index}"
+        aria-label="View photo ${index + 1}"
+      >
+        <img
+          src="${escapeAttr(item.thumbnailUrl || item.cardUrl || item.originalUrl)}"
+          alt=""
+          width="320" height="213"
+          loading="lazy"
+          decoding="async"
+          referrerpolicy="no-referrer"
+        >
+      </button>
+    `).join("");
+    thumbnails.dataset.gallerySignature = signature;
+  }
+
+  thumbnails.querySelectorAll("[data-public-room-gallery-index]").forEach((button) => {
+    const isActive =
+      Number(button.dataset.publicRoomGalleryIndex) === PUBLIC_ROOM_GALLERY_STATE.index;
+    button.setAttribute("aria-current", isActive ? "true" : "false");
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+    button.tabIndex = isActive ? 0 : -1;
+  });
+  window.requestAnimationFrame(keepPublicRoomGalleryThumbnailVisible);
+}
+
+function changePublicRoomGalleryImage(offset) {
+  const total = PUBLIC_ROOM_GALLERY_STATE.images.length;
+  if (total < 2) return;
+  PUBLIC_ROOM_GALLERY_STATE.index =
+    (PUBLIC_ROOM_GALLERY_STATE.index + offset + total) % total;
+  renderPublicRoomGallery();
+}
+
+function renderPublicRoomGallery() {
+  const room = PUBLIC_ROOM_GALLERY_STATE.room || {};
+  const images = PUBLIC_ROOM_GALLERY_STATE.images;
+  const image = images[PUBLIC_ROOM_GALLERY_STATE.index];
+  if (!image) return;
+  const {
+    title,
+    image: mainImage,
+    caption,
+    counter,
+    previous,
+    next
+  } = getPublicRoomGalleryElements();
+  const imageSource = normalizePublicRoomImageUrl(
+    image.optimizedUrl || image.originalUrl
+  );
+  const fallbackSource = normalizePublicRoomImageUrl(image.originalUrl);
+
+  if (title) title.textContent = getPublicRoomTitle(room);
+  if (caption) caption.textContent = image.caption || image.altText;
+  if (counter) {
+    counter.textContent = `${PUBLIC_ROOM_GALLERY_STATE.index + 1} / ${images.length}`;
+    counter.setAttribute(
+      "aria-label",
+      `Photo ${PUBLIC_ROOM_GALLERY_STATE.index + 1} of ${images.length}`
+    );
+  }
+  if (previous) {
+    previous.hidden = images.length < 2;
+    previous.disabled = images.length < 2;
+  }
+  if (next) {
+    next.hidden = images.length < 2;
+    next.disabled = images.length < 2;
+  }
+
+  setPublicRoomGalleryLoading(true);
+  if (mainImage) {
+    mainImage.alt = image.altText;
+    mainImage.dataset.fallbackSrc =
+      fallbackSource && fallbackSource !== imageSource ? fallbackSource : "";
+    mainImage.dataset.expectedSrc = imageSource;
+    mainImage.src = imageSource;
+    if (mainImage.complete && mainImage.naturalWidth > 0) {
+      window.queueMicrotask(handlePublicRoomGalleryImageLoaded);
+    }
+  }
+
+  renderPublicRoomGalleryThumbnails();
+  preloadPublicRoomGalleryAdjacentImages();
+}
+
+function getPublicRoomGalleryFocusableElements(dialog) {
+  return [...dialog.querySelectorAll(
+    'button:not([disabled]):not([hidden]), [href], [tabindex]:not([tabindex="-1"])'
+  )].filter((element) => !element.hidden && element.getClientRects().length > 0);
+}
+
+function trapPublicRoomGalleryFocus(event, dialog) {
+  if (event.key !== "Tab") return;
+  const focusable = getPublicRoomGalleryFocusableElements(dialog);
+  if (!focusable.length) {
+    event.preventDefault();
+    dialog.focus();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function finishPublicRoomGalleryClose() {
+  unlockPublicRoomGalleryScroll();
+  if (PUBLIC_ROOM_GALLERY_STATE.returnFocusOnClose) {
+    PUBLIC_ROOM_GALLERY_STATE.trigger?.focus?.();
+  }
+  PUBLIC_ROOM_GALLERY_STATE.trigger = null;
+  PUBLIC_ROOM_GALLERY_STATE.returnFocusOnClose = true;
+}
+
+function closePublicRoomGallery({ returnFocus = true } = {}) {
+  const { dialog } = getPublicRoomGalleryElements();
+  PUBLIC_ROOM_GALLERY_STATE.returnFocusOnClose = returnFocus;
+  if (document.fullscreenElement === dialog) {
+    void document.exitFullscreen?.();
+  }
+  if (dialog?.open) {
+    dialog.close();
+  } else {
+    finishPublicRoomGalleryClose();
+  }
+}
+
+function openPublicRoomGallery(room, trigger) {
+  const images = getPublicRoomGalleryImages(room);
+  const { dialog, thumbnails } = getPublicRoomGalleryElements();
+  if (!dialog || !images.length) return;
+
+  PUBLIC_ROOM_GALLERY_STATE.room = room;
+  PUBLIC_ROOM_GALLERY_STATE.images = images;
+  PUBLIC_ROOM_GALLERY_STATE.index = Math.max(
+    0,
+    Math.min(
+      images.length - 1,
+      Number(trigger?.dataset?.roomGalleryIndex || 0)
+    )
+  );
+  PUBLIC_ROOM_GALLERY_STATE.trigger = trigger || document.activeElement || null;
+  PUBLIC_ROOM_GALLERY_STATE.returnFocusOnClose = true;
+  PUBLIC_ROOM_GALLERY_STATE.preloadedUrls.clear();
+  if (thumbnails) thumbnails.dataset.gallerySignature = "";
+
+  lockPublicRoomGalleryScroll();
+  renderPublicRoomGallery();
+  try {
+    dialog.showModal();
+    window.requestAnimationFrame(() => {
+      document.getElementById("publicRoomGalleryClose")?.focus();
+    });
+  } catch (error) {
+    finishPublicRoomGalleryClose();
+    throw error;
+  }
+}
+
+function bindPublicRoomGallery() {
+  const { dialog, image, stage, thumbnails } = getPublicRoomGalleryElements();
+  if (!dialog || dialog.dataset.bound === "true") return;
+  dialog.dataset.bound = "true";
+
+  document.getElementById("publicRoomGalleryClose")?.addEventListener(
+    "click",
+    () => closePublicRoomGallery()
+  );
+  document.getElementById("publicRoomGalleryPrevious")?.addEventListener(
+    "click",
+    () => changePublicRoomGalleryImage(-1)
+  );
+  document.getElementById("publicRoomGalleryNext")?.addEventListener(
+    "click",
+    () => changePublicRoomGalleryImage(1)
+  );
+  document.getElementById("publicRoomGalleryFullscreen")?.addEventListener(
+    "click",
+    async () => {
+      try {
+        if (!document.fullscreenElement) {
+          await dialog.requestFullscreen?.();
+        } else {
+          await document.exitFullscreen?.();
+        }
+      } catch (_error) {
+        // The modal remains a full-viewport gallery if fullscreen is unavailable.
+      }
+    }
+  );
+  document.getElementById("publicRoomGalleryBook")?.addEventListener("click", () => {
+    const room = PUBLIC_ROOM_GALLERY_STATE.room;
+    closePublicRoomGallery({ returnFocus: false });
+    if (room) {
+      window.requestAnimationFrame(() => openPublicRoomBookingForm(room));
+    }
+  });
+
+  image?.addEventListener("load", handlePublicRoomGalleryImageLoaded);
+  image?.addEventListener("error", (event) => {
+    const fallback = normalizePublicRoomImageUrl(
+      event.currentTarget.dataset.fallbackSrc || ""
+    );
+    event.currentTarget.dataset.fallbackSrc = "";
+    if (fallback) {
+      const resolvedFallback = new URL(fallback, document.baseURI).href;
+      if (event.currentTarget.src !== resolvedFallback) {
+        event.currentTarget.src = fallback;
+        return;
+      }
+    }
+    showPublicRoomGalleryImageError();
+  });
+
+  thumbnails?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-public-room-gallery-index]");
+    if (!button) return;
+    PUBLIC_ROOM_GALLERY_STATE.index = Number(
+      button.dataset.publicRoomGalleryIndex || 0
+    );
+    renderPublicRoomGallery();
+  });
+
+  dialog.addEventListener("keydown", (event) => {
+    trapPublicRoomGalleryFocus(event, dialog);
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      changePublicRoomGalleryImage(-1);
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      changePublicRoomGalleryImage(1);
+    }
+  });
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closePublicRoomGallery();
+  });
+
+  stage?.addEventListener(
+    "touchstart",
+    (event) => {
+      PUBLIC_ROOM_GALLERY_STATE.touchStartX = event.changedTouches[0]?.clientX ?? null;
+      PUBLIC_ROOM_GALLERY_STATE.touchStartY = event.changedTouches[0]?.clientY ?? null;
+    },
+    { passive: true }
+  );
+  stage?.addEventListener(
+    "touchend",
+    (event) => {
+      const startX = PUBLIC_ROOM_GALLERY_STATE.touchStartX;
+      const startY = PUBLIC_ROOM_GALLERY_STATE.touchStartY;
+      const endX = event.changedTouches[0]?.clientX;
+      const endY = event.changedTouches[0]?.clientY;
+      PUBLIC_ROOM_GALLERY_STATE.touchStartX = null;
+      PUBLIC_ROOM_GALLERY_STATE.touchStartY = null;
+      if (
+        Number.isFinite(startX) &&
+        Number.isFinite(startY) &&
+        Number.isFinite(endX) &&
+        Number.isFinite(endY)
+      ) {
+        const deltaX = endX - startX;
+        const deltaY = endY - startY;
+        if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+          changePublicRoomGalleryImage(deltaX > 0 ? -1 : 1);
+        }
+      }
+    },
+    { passive: true }
+  );
+
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) closePublicRoomGallery();
+  });
+  dialog.addEventListener("close", finishPublicRoomGalleryClose);
+}
+
+function getPublicRoomAmenities(room = {}) {
+  return normalizePublicRoomArray(room.amenities)
+    .map((amenity) =>
+      typeof amenity === "string"
+        ? amenity.trim()
+        : String(amenity?.name || amenity?.label || "").trim()
+    )
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+function buildPublicRoomCard(room = {}) {
+  const roomTitle =
+    room.title || room.roomType?.name || room.roomNumber || "Room";
+  const roomImage = getPublicRoomImage(room);
+  const amenities = getPublicRoomAmenities(room);
+  const capacityParts = [];
+  const adults = Number(room.maxAdults || room.capacity || 0);
+  const children = Number(room.maxChildren || 0);
+
+  if (adults > 0) {
+    capacityParts.push(`${adults} adult${adults === 1 ? "" : "s"}`);
+  }
+  if (children > 0) {
+    capacityParts.push(`${children} child${children === 1 ? "" : "ren"}`);
+  }
+
+  const metaItems = [
+    room.roomNumber ? `Room ${room.roomNumber}` : "",
+    room.floor ? `Floor ${room.floor}` : "",
+    room.bedType || "",
+    capacityParts.join(" + ")
+  ].filter(Boolean);
+
+  const galleryImages = getPublicRoomGalleryImages(room);
+  const primaryImage = galleryImages[0];
+  const imageMarkup = roomImage
+    ? `<button type="button" class="room-card-gallery-trigger" data-room-gallery-open="${escapeAttr(room.id)}" aria-label="View ${galleryImages.length} photo${galleryImages.length === 1 ? "" : "s"} of ${escapeAttr(roomTitle)}"><img src="${escapeAttr(normalizeImagePath(roomImage))}" data-room-image-fallback="${escapeAttr(normalizeImagePath(primaryImage?.originalUrl || roomImage))}" alt="${escapeAttr(primaryImage?.altText || roomTitle)}" width="960" height="640" loading="lazy" decoding="async" referrerpolicy="no-referrer" />${galleryImages.length > 1 ? `<span><i class="fas fa-images" aria-hidden="true"></i> ${galleryImages.length}</span>` : ""}</button>`
+    : `<div class="room-card-placeholder" aria-hidden="true"><i class="fas fa-bed"></i></div>`;
+
+  return `
+    <article class="room-card">
+      <div class="room-card-media">
+        ${imageMarkup}
+      </div>
+      <div class="room-card-body">
+        <div class="room-card-head">
+          <div>
+            <p class="room-card-type">${escapeHTML(room.roomType?.name || "Room")}</p>
+            <h3>${escapeHTML(roomTitle)}</h3>
+          </div>
+          <strong>${escapeHTML(formatCurrency(room.pricePerNight || room.basePrice || 0))}<span>/night</span></strong>
+        </div>
+        ${
+          metaItems.length
+            ? `<div class="room-card-meta">${metaItems.map((item) => `<span>${escapeHTML(item)}</span>`).join("")}</div>`
+            : ""
+        }
+        ${
+          room.description
+            ? `<p class="room-card-desc">${escapeHTML(room.description)}</p>`
+            : ""
+        }
+        ${
+          amenities.length
+            ? `<div class="room-card-amenities">${amenities.map((item) => `<span>${escapeHTML(item)}</span>`).join("")}</div>`
+            : ""
+        }
+        <button type="button" class="btn btn-outline room-card-action" data-room-booking-select="${escapeAttr(room.id)}">
+          <span>Request Booking</span>
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function renderPublicRooms(rooms = [], options = {}) {
+  const grid = document.getElementById("publicRoomsGrid");
+  if (!grid) return;
+
+  if (!rooms.length) {
+    grid.innerHTML = `
+      <div class="rooms-empty-state">
+        <h3>No rooms available</h3>
+        <p>${escapeHTML(options.emptyMessage || "Try another date range or contact the hotel directly.")}</p>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = rooms.map((room) => buildPublicRoomCard(room)).join("");
+  bindPublicRoomGallery();
+  grid.querySelectorAll("[data-room-image-fallback]").forEach((image) => image.addEventListener("error", () => {
+    const fallback = image.dataset.roomImageFallback || "";
+    image.dataset.roomImageFallback = "";
+    if (fallback) {
+      const resolvedFallback = new URL(fallback, document.baseURI).href;
+      if (image.src !== resolvedFallback) image.src = resolvedFallback;
+    }
+  }));
+  grid.querySelectorAll("[data-room-gallery-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const roomId = Number(button.dataset.roomGalleryOpen || 0);
+      const selectedRoom = rooms.find((room) => Number(room.id) === roomId);
+      if (selectedRoom) openPublicRoomGallery(selectedRoom, button);
+    });
+  });
+  grid.querySelectorAll("[data-room-booking-select]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const roomId = Number(button.dataset.roomBookingSelect || 0);
+      const selectedRoom = rooms.find((room) => Number(room.id) === roomId);
+      openPublicRoomBookingForm(selectedRoom);
+    });
+  });
+}
+
+function getPublicAvailabilityFormValues() {
+  const form = document.getElementById("publicRoomAvailabilityForm");
+  if (!form) {
+    return {
+      checkInDate: "",
+      checkOutDate: "",
+      adults: 1,
+      children: 0
+    };
+  }
+
+  const formData = new FormData(form);
+  return {
+    checkInDate: String(formData.get("checkInDate") || ""),
+    checkOutDate: String(formData.get("checkOutDate") || ""),
+    adults: Math.max(1, Number(formData.get("adults") || 1)),
+    children: Math.max(0, Number(formData.get("children") || 0))
+  };
+}
+
+function getPublicRoomTitle(room = {}) {
+  return room.title || room.roomType?.name || room.roomNumber || "Selected Room";
+}
+
+function openPublicRoomBookingForm(room = null) {
+  if (!room?.id) {
+    return;
+  }
+
+  const bookingForm = document.getElementById("publicRoomBookingForm");
+  const roomIdInput = document.getElementById("publicBookingRoomId");
+  const titleEl = document.getElementById("publicBookingRoomTitle");
+  const summaryEl = document.getElementById("publicBookingSummary");
+  if (!bookingForm || !roomIdInput || !titleEl || !summaryEl) return;
+
+  const availability = getPublicAvailabilityFormValues();
+  if (!availability.checkInDate || !availability.checkOutDate || availability.checkOutDate <= availability.checkInDate) {
+    setPublicRoomsStatus("Choose valid check-in and check-out dates before requesting a booking.", "error");
+    return;
+  }
+
+  roomIdInput.value = String(room.id);
+  titleEl.textContent = getPublicRoomTitle(room);
+  summaryEl.innerHTML = `
+    <div class="room-booking-summary-row">
+      <span>Dates</span>
+      <strong>${escapeHTML(availability.checkInDate)} to ${escapeHTML(availability.checkOutDate)}</strong>
+    </div>
+    <div class="room-booking-summary-row">
+      <span>Guests</span>
+      <strong>${escapeHTML(String(availability.adults))} adult${availability.adults === 1 ? "" : "s"}${availability.children ? `, ${escapeHTML(String(availability.children))} child${availability.children === 1 ? "" : "ren"}` : ""}</strong>
+    </div>
+    <div class="room-booking-summary-row">
+      <span>Room</span>
+      <strong>${escapeHTML(getPublicRoomTitle(room))}</strong>
+    </div>
+    <div class="room-booking-summary-row">
+      <span>Display Price</span>
+      <strong>${escapeHTML(formatCurrency(room.pricePerNight || room.basePrice || 0))}/night</strong>
+    </div>
+  `;
+  bookingForm.hidden = false;
+  bookingForm.dataset.checkInDate = availability.checkInDate;
+  bookingForm.dataset.checkOutDate = availability.checkOutDate;
+  bookingForm.dataset.adults = String(availability.adults);
+  bookingForm.dataset.children = String(availability.children);
+  setPublicRoomsStatus("Complete the guest details below. Final availability is checked again before saving.", "muted");
+  bookingForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closePublicRoomBookingForm() {
+  const bookingForm = document.getElementById("publicRoomBookingForm");
+  if (!bookingForm) return;
+
+  bookingForm.hidden = true;
+  bookingForm.reset();
+  delete bookingForm.dataset.checkInDate;
+  delete bookingForm.dataset.checkOutDate;
+  delete bookingForm.dataset.adults;
+  delete bookingForm.dataset.children;
+  delete bookingForm.dataset.roomBookingIdempotencyKey;
+}
+
+async function submitPublicRoomBooking(form) {
+  const hotelSlug = getPublicRoomsHotelSlug();
+  if (!hotelSlug) {
+    setPublicBookingStatus("Hotel context is missing. Please reload this hotel website.", "error");
+    return;
+  }
+
+  const submitButton = form.querySelector("button[type='submit']");
+  const formData = new FormData(form);
+  const payload = {
+    roomId: Number(formData.get("roomId") || 0),
+    guestName: String(formData.get("guestName") || "").trim(),
+    guestPhone: String(formData.get("guestPhone") || "").trim(),
+    guestEmail: String(formData.get("guestEmail") || "").trim(),
+    checkInDate: form.dataset.checkInDate || "",
+    checkOutDate: form.dataset.checkOutDate || "",
+    adults: Math.max(1, Number(form.dataset.adults || 1)),
+    children: Math.max(0, Number(form.dataset.children || 0)),
+    notes: String(formData.get("notes") || "").trim()
+  };
+
+  if (!payload.roomId || !payload.guestName || !payload.guestPhone) {
+    setPublicBookingStatus("Guest name and phone are required.", "error");
+    return;
+  }
+
+  if (!payload.checkInDate || !payload.checkOutDate || payload.checkOutDate <= payload.checkInDate) {
+    setPublicBookingStatus("Please select valid check-in and check-out dates again.", "error");
+    return;
+  }
+
+  try {
+    form.dataset.roomBookingIdempotencyKey =
+      form.dataset.roomBookingIdempotencyKey ||
+      (window.crypto?.randomUUID?.() || `room-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.dataset.originalText = submitButton.textContent || "";
+      const submitLabel = submitButton.querySelector("span");
+      if (submitLabel) {
+        submitLabel.textContent = "Submitting...";
+      }
+    }
+    setPublicBookingStatus("Submitting booking request...", "muted");
+
+    const response = await fetch(
+      `${getPublicRoomsApiBase()}/${encodeURIComponent(hotelSlug)}/bookings`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": form.dataset.roomBookingIdempotencyKey
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || result?.success === false) {
+      const error = new Error(result?.message || "Unable to submit booking request.");
+      error.code = result?.code || "";
+      error.responseData = result;
+      throw error;
+    }
+
+    const booking = result.booking || {};
+    delete form.dataset.roomBookingIdempotencyKey;
+    setPublicBookingStatus(
+      `Booking request submitted. Reference: ${booking.id || "pending confirmation"}. The hotel will confirm availability and payment.`,
+      "success"
+    );
+    setPublicRoomsStatus("Booking request submitted successfully.", "success");
+    await loadPublicRooms({
+      availability: true,
+      checkInDate: payload.checkInDate,
+      checkOutDate: payload.checkOutDate,
+      adults: payload.adults,
+      children: payload.children
+    });
+  } catch (error) {
+    setPublicBookingStatus(getRoomBookingErrorMessage(error), "error");
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      const submitLabel = submitButton.querySelector("span");
+      if (submitLabel) {
+        submitLabel.textContent = "Submit Booking Request";
+      }
+    }
+  }
+}
+
+function buildPublicRoomsPageUrl(overrides = {}) {
+  const availability = { ...getPublicAvailabilityFormValues(), ...overrides };
+  const params = new URLSearchParams();
+  const hotelSlug = getPublicRoomsHotelSlug();
+  if (hotelSlug) params.set("hotel", hotelSlug);
+  if (availability.checkInDate) params.set("checkInDate", availability.checkInDate);
+  if (availability.checkOutDate) params.set("checkOutDate", availability.checkOutDate);
+  params.set("adults", String(Math.max(1, Number(availability.adults || 1))));
+  params.set("children", String(Math.max(0, Number(availability.children || 0))));
+  if (overrides.roomTypeId) params.set("roomTypeId", String(overrides.roomTypeId));
+  return `rooms.html?${params.toString()}`;
+}
+
+function updatePublicRoomsExploreLink() {
+  const link = document.getElementById("publicRoomsExploreAll");
+  if (link) link.href = buildPublicRoomsPageUrl();
+}
+
+function buildPublicRoomTypeCard(roomType = {}, index = 0) {
+  const image = roomType.primaryImage || null;
+  const availability = Number(roomType.availableCount || 0);
+  const capacity = roomType.capacity || {};
+  const startingPrice = Math.max(0, Number(roomType.startingPrice || 0));
+  const description = String(roomType.shortDescription || "").trim()
+    || "A comfortable stay with thoughtful essentials for a relaxing visit.";
+  const imageMarkup = image?.cardUrl
+    ? `<img src="${escapeAttr(normalizePublicRoomImageUrl(image.cardUrl))}" alt="${escapeAttr(image.alt || roomType.name || "Room type")}" width="${Number(image.width || 960)}" height="${Number(image.height || 640)}" loading="${index === 0 ? "eager" : "lazy"}" ${index === 0 ? 'fetchpriority="high"' : ""} decoding="async" referrerpolicy="no-referrer" />`
+    : `<div class="room-card-placeholder" aria-hidden="true"><i class="fas fa-bed"></i></div>`;
+  const target = buildPublicRoomsPageUrl({ roomTypeId: roomType.roomTypeId });
+  const capacityLabel = [
+    Number(capacity.adults || 0) > 0 ? `Up to ${Number(capacity.adults)} adults` : "",
+    Number(capacity.children || 0) > 0 ? `${Number(capacity.children)} children` : ""
+  ].filter(Boolean).join(" · ") || "Guest capacity available on request";
+  const amenities = normalizePublicRoomArray(roomType.amenities).slice(0, 3);
+  return `
+    <article class="room-card room-type-card">
+      <a class="room-card-media room-type-card-media" href="${escapeAttr(target)}" aria-label="Explore ${escapeAttr(roomType.name || "room type")}">
+        ${imageMarkup}
+        <span class="room-card-availability" data-state="${escapeAttr(roomType.availabilityStatus || "available")}">${availability} room${availability === 1 ? "" : "s"}</span>
+      </a>
+      <div class="room-card-body">
+        <div class="room-card-head">
+          <div><p class="room-card-type">Room Type</p><h3>${escapeHTML(roomType.name || "Room Type")}</h3></div>
+          <strong>${startingPrice > 0 ? escapeHTML(formatCurrency(startingPrice)) : "Contact hotel"}<span>${startingPrice > 0 ? "from / night" : "for rates"}</span></strong>
+        </div>
+        <div class="room-card-meta"><span><i class="fas fa-user-group" aria-hidden="true"></i> ${escapeHTML(capacityLabel)}</span></div>
+        <p class="room-card-desc">${escapeHTML(description)}</p>
+        ${amenities.length ? `<div class="room-card-amenities">${amenities.map((item) => `<span>${escapeHTML(item)}</span>`).join("")}</div>` : ""}
+        <a class="btn btn-outline room-card-action" href="${escapeAttr(target)}"><span>View Available Rooms</span></a>
+      </div>
+    </article>`;
+}
+
+function renderPublicRoomTypes(items = []) {
+  const grid = document.getElementById("publicRoomsGrid");
+  if (!grid) return;
+  if (!items.length) {
+    grid.innerHTML = `<div class="rooms-empty-state"><h3>Room information is currently unavailable.</h3><p>Please contact the hotel for assistance.</p></div>`;
+    return;
+  }
+  grid.innerHTML = items.map((item, index) => buildPublicRoomTypeCard(item, index)).join("");
+}
+
+async function loadPublicRooms(options = {}) {
+  const hotelSlug = getPublicRoomsHotelSlug();
+  if (!hotelSlug) {
+    setPublicRoomsSectionVisible(false);
+    return;
+  }
+  const isAvailabilitySearch = Boolean(options.availability);
+  const params = new URLSearchParams();
+  let url;
+  if (isAvailabilitySearch) {
+    params.set("checkInDate", options.checkInDate);
+    params.set("checkOutDate", options.checkOutDate);
+    params.set("adults", String(options.adults || 1));
+    params.set("children", String(options.children || 0));
+    url = `${getPublicRoomsApiBase()}/${encodeURIComponent(hotelSlug)}/availability?${params.toString()}`;
+  } else {
+    params.set("mode", "types");
+    params.set("page", "1");
+    params.set("pageSize", "6");
+    url = `${getPublicRoomsApiBase()}/${encodeURIComponent(hotelSlug)}/discovery?${params.toString()}`;
+  }
+  try {
+    setPublicRoomsStatus(isAvailabilitySearch ? "Checking rooms..." : "Discovering rooms...", "muted");
+    const response = await fetch(url);
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 403 || payload?.code === "ROOM_BOOKING_DISABLED") {
+      setPublicRoomsSectionVisible(false);
+      return;
+    }
+    if (!response.ok || payload?.success === false) throw new Error(payload?.message || "Unable to load rooms.");
+    setPublicRoomsSectionVisible(true);
+    if (isAvailabilitySearch) {
+      const rooms = Array.isArray(payload.rooms) ? payload.rooms : [];
+      renderPublicRooms(rooms, { emptyMessage: "No rooms match the selected dates and guest count." });
+      setPublicRoomsStatus(`${rooms.length} room${rooms.length === 1 ? "" : "s"} available for selected dates.`, rooms.length ? "success" : "muted");
+    } else {
+      const roomTypes = Array.isArray(payload.items) ? payload.items : [];
+      renderPublicRoomTypes(roomTypes);
+      setPublicRoomsStatus(`${payload.pagination?.totalItems || roomTypes.length} room type${Number(payload.pagination?.totalItems || roomTypes.length) === 1 ? "" : "s"} to explore.`, roomTypes.length ? "success" : "muted");
+      updatePublicRoomsExploreLink();
+    }
+  } catch (error) {
+    console.warn("Public room listing skipped:", error);
+    setPublicRoomsSectionVisible(isAvailabilitySearch);
+    setPublicRoomsStatus(error.message || "Rooms could not be loaded. Please retry.", "error");
+  }
+}
+function bindPublicRoomAvailabilityForm() {
+  const form = document.getElementById("publicRoomAvailabilityForm");
+  if (!form) return;
+  const checkInInput = form.querySelector("#publicRoomCheckIn");
+  const checkOutInput = form.querySelector("#publicRoomCheckOut");
+  const adultsInput = form.querySelector("#publicRoomAdults");
+  const childrenInput = form.querySelector("#publicRoomChildren");
+  const query = new URLSearchParams(window.location.search);
+  const todayValue = toPublicDateInputValue(new Date());
+  const tomorrowValue = toPublicDateInputValue(addPublicDateDays(new Date(), 1));
+  if (checkInInput) {
+    checkInInput.min = todayValue;
+    checkInInput.value = query.get("checkInDate") || checkInInput.value || todayValue;
+  }
+  if (checkOutInput) {
+    checkOutInput.min = tomorrowValue;
+    checkOutInput.value = query.get("checkOutDate") || checkOutInput.value || tomorrowValue;
+  }
+  if (adultsInput && query.has("adults")) adultsInput.value = String(Math.max(1, Number(query.get("adults") || 1)));
+  if (childrenInput && query.has("children")) childrenInput.value = String(Math.max(0, Number(query.get("children") || 0)));
+  const syncExploreLink = () => updatePublicRoomsExploreLink();
+  checkInInput?.addEventListener("change", () => {
+    const nextCheckout = toPublicDateInputValue(addPublicDateDays(checkInInput.value, 1));
+    if (checkOutInput) {
+      checkOutInput.min = nextCheckout;
+      if (!checkOutInput.value || checkOutInput.value <= checkInInput.value) checkOutInput.value = nextCheckout;
+    }
+    syncExploreLink();
+  });
+  checkOutInput?.addEventListener("change", syncExploreLink);
+  adultsInput?.addEventListener("change", syncExploreLink);
+  childrenInput?.addEventListener("change", syncExploreLink);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = getPublicAvailabilityFormValues();
+    if (!values.checkInDate || !values.checkOutDate || values.checkOutDate <= values.checkInDate) {
+      setPublicRoomsStatus("Check-out date must be after check-in date.", "error");
+      return;
+    }
+    window.location.assign(buildPublicRoomsPageUrl(values));
+  });
+  syncExploreLink();
+}
+function bindPublicRoomBookingForm() {
+  const form = document.getElementById("publicRoomBookingForm");
+  const closeButton = document.getElementById("publicBookingCloseBtn");
+  if (!form) return;
+
+  closeButton?.addEventListener("click", closePublicRoomBookingForm);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await submitPublicRoomBooking(form);
+  });
+}
+
+async function initPublicRoomsSection() {
+  if (!document.getElementById("rooms")) {
+    return;
+  }
+
+  setPublicRoomsSectionVisible(false);
+  bindPublicRoomAvailabilityForm();
+  bindPublicRoomBookingForm();
+  await loadPublicRooms();
+}
+
+async function hydrateSecondaryPublicContent(secondaryDataPromise) {
+  if (!secondaryDataPromise) return;
+  await secondaryDataPromise;
+  renderGallerySection();
+  GalleryLightbox.init();
+  renderTestimonialsSection(window.APP_STATE?.testimonials || []);
+  HotelPopupNotificationModal.renderFromState();
+  initReveal(document.getElementById("gallery"));
+  initReveal(document.getElementById("testimonials"));
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     const isMenuPage = document.body.classList.contains("menu-page");
@@ -7659,6 +10190,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       includeGallery: !isMenuPage,
       includeTestimonials: !isMenuPage
     });
+    const secondaryDataPromise = window.APP_SECONDARY_DATA_PROMISE;
     applyLoadingScreenFromState();
     applyThemeFromState();
     applyHotelConfigFromState();
@@ -7666,13 +10198,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderTestimonialsSection(window.APP_STATE?.testimonials || []);
     updateHotelAwareLinks();
     applySectionVisibilityFromState();
+    const publicRoomsPromise = initPublicRoomsSection();
+    HotelPopupNotificationModal.bind();
+    HotelPopupNotificationModal.renderFromState();
     bindReservationForm();
     bindEventInquiryForm();
     bindTestimonialReviewForm();
     initMenuAndCart();
 
     markAppReady();
-    console.log("App data loaded successfully", window.APP_STATE);
+    void hydrateSecondaryPublicContent(secondaryDataPromise);
+    void publicRoomsPromise;
+    if (isLocalAppRuntime(window.location.hostname)) {
+      console.info("App data loaded successfully", {
+        hotelSlug: window.APP_STATE?.activeHotelSlug || "",
+        menuCategoryCount: Object.keys(window.APP_STATE?.menu || {}).length
+      });
+    }
   } catch (error) {
     console.error("App bootstrap failed:", error);
     markAppReady();

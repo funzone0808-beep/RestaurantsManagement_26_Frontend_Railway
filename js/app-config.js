@@ -10,7 +10,7 @@
     hostname === "127.0.0.1" ||
     hostname.endsWith(".localhost");
 
-  const localBackendUrl = "http://localhost:5000";
+  const localBackendUrl = `http://${hostname || "localhost"}:5000`;
   const invalidRuntimeConfigBasePath = "/__missing-runtime-config__";
 
   function getMetaConfigElement(name) {
@@ -98,6 +98,9 @@
   );
   const metaOpenWhatsAppAfterVerifiedOnlinePayment = getMetaConfig(
     "app-open-whatsapp-after-verified-online-payment"
+  );
+  const metaRoomCombinedCheckoutFrontendEnabled = getMetaConfig(
+    "app-room-combined-checkout-frontend-enabled"
   );
   const hasBackendMetaTag = hasMetaConfigTag("app-backend-base-url");
   const hasApiMetaTag = hasMetaConfigTag("app-api-base-url");
@@ -235,6 +238,11 @@
       typeof existingConfig.PAYMENT_GATEWAY_CHECKOUT_ENABLED === "boolean"
         ? existingConfig.PAYMENT_GATEWAY_CHECKOUT_ENABLED
         : true,
+
+    ROOM_COMBINED_CHECKOUT_FRONTEND_ENABLED: cleanBoolean(
+      existingConfig.ROOM_COMBINED_CHECKOUT_FRONTEND_ENABLED,
+      cleanBoolean(metaRoomCombinedCheckoutFrontendEnabled, false)
+    ),
 
     PAYMENT_GATEWAY_SCRIPT_URL:
       existingConfig.PAYMENT_GATEWAY_SCRIPT_URL ||

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="app-backend-base-url" content="https://production-backend-fc-01-1.onrender.com" />
+<meta name="app-api-base-url" content="https://production-backend-fc-01-1.onrender.com/api" />
+  <title>Your QR Table Order</title>
+  <link rel="stylesheet" href="css/qr-order-status.css" />
+</head>
+<body>
+  <a class="qr-skip-link" href="#qrStatusMain">Skip to order status</a>
+  <main id="qrStatusMain" class="qr-status-shell" aria-labelledby="qrStatusTitle" aria-busy="true" tabindex="-1">
+    <section class="qr-status-card">
+      <p class="qr-status-kicker">Your table order</p>
+      <h1 id="qrStatusTitle">Order received</h1>
+      <p id="qrStatusMessage" class="qr-status-message" role="status" aria-live="polite">Loading your latest order status…</p>
+      <div id="qrStatusBadge" class="qr-status-badge" role="status" aria-live="polite">Loading</div>
+    </section>
+
+    <section class="qr-status-card" aria-labelledby="qrItemsTitle">
+      <div class="qr-status-heading-row">
+        <h2 id="qrItemsTitle">Your items</h2>
+        <span id="qrVersionLabel">Version 1</span>
+      </div>
+      <div id="qrItemsList" class="qr-items-list" aria-live="polite" aria-busy="true"></div>
+      <label class="qr-note-field" for="qrOrderNote">
+        <span>Order note</span>
+        <textarea id="qrOrderNote" maxlength="1000" rows="3" aria-describedby="qrEditPolicy" disabled></textarea>
+      </label>
+      <div class="qr-status-actions">
+        <button id="qrEditButton" type="button" hidden>Edit order</button>
+        <button id="qrCancelEditButton" type="button" class="secondary" hidden>Cancel</button>
+        <button id="qrSaveButton" type="button" hidden>Save correction</button>
+        <button id="qrRetryButton" type="button" class="secondary" hidden>Retry</button>
+      </div>
+      <p id="qrEditPolicy" class="qr-status-policy">Editing is available only while your KOT remains new.</p>
+    </section>
+  </main>
+  <script src="js/app-config.js" defer></script>
+  <script src="js/qr-order-status.js" defer></script>
+</body>
+</html>

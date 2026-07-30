@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Explore available rooms and suites, compare amenities, and request a hotel booking." />
+<meta name="app-backend-base-url" content="https://production-backend-fc-01-1.onrender.com" />
+<meta name="app-api-base-url" content="https://production-backend-fc-01-1.onrender.com/api" />
+  <meta name="robots" content="index,follow" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Rooms & Suites" />
+  <meta property="og:description" content="Explore rooms and suites for your selected hotel." />
+  <title>Rooms &amp; Suites</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/rooms.css" />
+</head>
+<body class="rooms-page app-booting">
+  <a class="skip-link" href="#roomsResults">Skip to room results</a>
+
+  <header class="rooms-page-header">
+    <div class="container rooms-page-nav">
+      <a id="roomsHotelHome" class="rooms-page-brand" href="index.html" aria-label="Return to hotel home">
+        <span class="rooms-page-brand-mark" aria-hidden="true">H</span>
+        <span><small>Stay at</small><strong id="roomsHotelName">Your Hotel</strong></span>
+      </a>
+      <a id="roomsBackHome" class="rooms-page-home-link" href="index.html#rooms"><i class="fas fa-arrow-left" aria-hidden="true"></i> Hotel home</a>
+    </div>
+  </header>
+
+  <main id="roomsMain">
+    <section class="rooms-discovery-hero" aria-labelledby="roomsPageTitle">
+      <div class="container">
+        <p class="section-eyebrow">Find Your Stay</p>
+        <h1 id="roomsPageTitle">Rooms &amp; Suites</h1>
+        <p>Compare thoughtfully designed stays, check live availability, and choose the room that feels right.</p>
+
+        <form id="roomsDiscoveryForm" class="rooms-discovery-search glass-card" autocomplete="off">
+          <div class="form-group">
+            <label for="roomsCheckIn">Check-in</label>
+            <input id="roomsCheckIn" name="checkInDate" type="date" required />
+          </div>
+          <div class="form-group">
+            <label for="roomsCheckOut">Check-out</label>
+            <input id="roomsCheckOut" name="checkOutDate" type="date" required />
+          </div>
+          <div class="form-group">
+            <label for="roomsAdults">Adults</label>
+            <input id="roomsAdults" name="adults" type="number" min="1" max="20" value="1" required />
+          </div>
+          <div class="form-group">
+            <label for="roomsChildren">Children</label>
+            <input id="roomsChildren" name="children" type="number" min="0" max="20" value="0" />
+          </div>
+          <button class="btn btn-gold" type="submit"><i class="fas fa-magnifying-glass" aria-hidden="true"></i><span>Search availability</span></button>
+        </form>
+      </div>
+    </section>
+
+    <div id="roomsMobileSummary" class="rooms-mobile-summary" aria-live="polite"></div>
+
+    <section class="rooms-discovery-shell container" aria-label="Room search and results">
+      <aside class="rooms-filter-panel" aria-labelledby="roomsFilterTitle">
+        <div class="rooms-filter-heading">
+          <div><p class="section-eyebrow">Refine</p><h2 id="roomsFilterTitle">Filters</h2></div>
+          <button id="roomsFilterClose" class="rooms-filter-close" type="button" aria-label="Close filters"><i class="fas fa-times" aria-hidden="true"></i></button>
+        </div>
+        <form id="roomsFilterForm">
+          <div class="form-group">
+            <label for="roomsSearch">Search</label>
+            <div class="rooms-search-field"><i class="fas fa-magnifying-glass" aria-hidden="true"></i><input id="roomsSearch" name="search" type="search" maxlength="80" placeholder="Room name or number" /><button id="roomsSearchClear" type="button" aria-label="Clear room search" hidden><i class="fas fa-times" aria-hidden="true"></i></button></div>
+          </div>
+          <div class="form-group">
+            <label for="roomsSort">Sort by</label>
+            <select id="roomsSort" name="sort">
+              <option value="recommended">Recommended</option>
+              <option value="price_asc">Price: Low to High</option>
+              <option value="price_desc">Price: High to Low</option>
+              <option value="capacity">Guest capacity</option>
+            </select>
+          </div>
+          <fieldset>
+            <legend>Nightly price</legend>
+            <div class="rooms-price-row">
+              <label for="roomsMinPrice"><span>Minimum</span><input id="roomsMinPrice" name="minPrice" type="number" min="0" step="100" inputmode="numeric" placeholder="₹0" /></label>
+              <label for="roomsMaxPrice"><span>Maximum</span><input id="roomsMaxPrice" name="maxPrice" type="number" min="0" step="100" inputmode="numeric" placeholder="Any" /></label>
+            </div>
+          </fieldset>
+          <div class="form-group">
+            <label for="roomsAmenity">Amenity</label>
+            <input id="roomsAmenity" name="amenity" type="text" maxlength="80" placeholder="e.g. Wi-Fi" />
+          </div>
+          <div class="form-group rooms-physical-filter">
+            <label for="roomsBedType">Bed type</label>
+            <input id="roomsBedType" name="bedType" type="text" maxlength="80" placeholder="e.g. King" />
+          </div>
+          <div class="form-group rooms-physical-filter">
+            <label for="roomsFloor">Floor</label>
+            <input id="roomsFloor" name="floor" type="text" maxlength="80" placeholder="e.g. 2" />
+          </div>
+          <div class="rooms-filter-actions">
+            <button class="btn btn-primary" type="submit">Apply filters</button>
+            <button id="roomsClearFilters" class="rooms-clear-filters" type="button">Clear all</button>
+          </div>
+        </form>
+      </aside>
+      <button id="roomsFilterBackdrop" class="rooms-filter-backdrop" type="button" aria-label="Close filters" hidden></button>
+
+      <div id="roomsResults" class="rooms-results" tabindex="-1">
+        <div class="rooms-results-toolbar">
+          <div>
+            <button id="roomsBackToTypes" class="rooms-back-to-types" type="button" hidden><i class="fas fa-arrow-left" aria-hidden="true"></i> All room types</button>
+            <p class="section-eyebrow" id="roomsResultsEyebrow">Curated Stays</p>
+            <h2 id="roomsResultsTitle">Explore Room Types</h2>
+            <p id="roomsResultCount" class="rooms-result-count" role="status" aria-live="polite">Finding available rooms…</p>
+          </div>
+          <button id="roomsFilterOpen" class="rooms-filter-open btn btn-outline" type="button"><i class="fas fa-sliders" aria-hidden="true"></i> Filters</button>
+        </div>
+
+        <div id="roomsStatus" class="rooms-page-status" role="status" aria-live="polite"></div>
+        <div id="roomsCards" class="rooms-page-grid" aria-busy="true"></div>
+        <div class="rooms-load-more-wrap">
+          <button id="roomsLoadMore" class="btn btn-outline rooms-load-more" type="button" hidden><span>Load More Rooms</span></button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="roomsGalleryDialog" class="public-room-gallery room-gallery" aria-labelledby="roomsGalleryTitle" aria-describedby="roomsGalleryCaption" aria-modal="true">
+    <header class="room-gallery__header">
+      <div class="room-gallery__heading"><p class="section-eyebrow">Room Gallery</p><h3 id="roomsGalleryTitle">Room photos</h3></div>
+      <div class="room-gallery__header-actions"><span id="roomsGalleryCounter" class="room-gallery__counter" aria-live="polite">1 / 1</span><button id="roomsGalleryFullscreen" class="room-booking-close room-gallery__utility" type="button" aria-label="View gallery full screen"><i class="fas fa-expand" aria-hidden="true"></i></button><button id="roomsGalleryClose" class="room-booking-close room-gallery__close" type="button" aria-label="Close room gallery"><i class="fas fa-times" aria-hidden="true"></i></button></div>
+    </header>
+    <div id="roomsGalleryStage" class="room-gallery__stage" aria-busy="true">
+      <p id="roomsGalleryLoading" class="room-gallery__loading" role="status">Loading room photo…</p>
+      <p id="roomsGalleryError" class="room-gallery__error" role="status" hidden>This room photo could not be loaded.</p>
+      <button id="roomsGalleryPrevious" class="public-room-gallery-arrow room-gallery__nav room-gallery__nav--previous is-previous" type="button" aria-label="Previous room photo"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
+      <img id="roomsGalleryImage" class="room-gallery__image" alt="" width="1600" height="900" decoding="async" fetchpriority="high" />
+      <button id="roomsGalleryNext" class="public-room-gallery-arrow room-gallery__nav room-gallery__nav--next is-next" type="button" aria-label="Next room photo"><i class="fas fa-chevron-right" aria-hidden="true"></i></button>
+    </div>
+    <div class="room-gallery__meta"><p id="roomsGalleryCaption"></p></div>
+    <div id="roomsGalleryThumbnails" class="room-gallery__thumbnails" role="listbox" aria-label="Choose a room photo"></div>
+    <footer class="room-gallery__footer"><button id="roomsGalleryBook" class="btn btn-gold room-gallery__book" type="button">Book this room</button></footer>
+  </dialog>
+
+  <dialog id="roomsBookingDialog" class="rooms-booking-dialog" aria-labelledby="roomsBookingTitle" aria-modal="true">
+    <form id="roomsBookingForm" method="dialog" autocomplete="on">
+      <input id="roomsBookingRoomId" name="roomId" type="hidden" />
+      <header class="rooms-booking-head"><div><p class="section-eyebrow">Booking Request</p><h2 id="roomsBookingTitle">Selected Room</h2></div><button id="roomsBookingClose" class="room-booking-close" type="button" aria-label="Close booking request"><i class="fas fa-times" aria-hidden="true"></i></button></header>
+      <div id="roomsBookingSummary" class="room-booking-summary"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="roomsGuestName">Guest name <span aria-hidden="true">*</span></label>
+          <input id="roomsGuestName" name="guestName" type="text" minlength="2" maxlength="160" autocomplete="name" aria-describedby="roomsGuestNameError" required />
+          <small id="roomsGuestNameError" class="rooms-field-error" aria-live="polite"></small>
+        </div>
+        <div class="form-group">
+          <label for="roomsGuestPhone">Phone <span aria-hidden="true">*</span></label>
+          <input id="roomsGuestPhone" name="guestPhone" type="tel" inputmode="tel" minlength="7" maxlength="30" autocomplete="tel" pattern="[0-9+() .-]{7,30}" aria-describedby="roomsGuestPhoneError" required />
+          <small id="roomsGuestPhoneError" class="rooms-field-error" aria-live="polite"></small>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="roomsGuestEmail">Email <span class="rooms-optional">(optional)</span></label>
+          <input id="roomsGuestEmail" name="guestEmail" type="email" maxlength="320" autocomplete="email" inputmode="email" spellcheck="false" aria-describedby="roomsGuestEmailError" />
+          <small id="roomsGuestEmailError" class="rooms-field-error" aria-live="polite"></small>
+        </div>
+        <div class="form-group">
+          <label for="roomsGuestNotes">Notes <span class="rooms-optional">(optional)</span></label>
+          <textarea id="roomsGuestNotes" name="notes" rows="3" maxlength="1000" placeholder="Arrival time, extra bed, or accessibility needs" aria-describedby="roomsGuestNotesError"></textarea>
+          <small id="roomsGuestNotesError" class="rooms-field-error" aria-live="polite"></small>
+        </div>
+      </div>
+      <p id="roomsBookingStatus" class="rooms-booking-status" role="status" aria-live="polite"></p>
+      <button class="btn btn-gold rooms-booking-submit" type="submit"><i class="fas fa-paper-plane" aria-hidden="true"></i><span>Submit Booking Request</span></button>
+    </form>
+  </dialog>
+
+  <script src="js/app-config.js" defer></script>
+  <script src="js/data-loader.js" defer></script>
+  <script src="js/rooms.js" defer></script>
+</body>
+</html>

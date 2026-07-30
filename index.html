@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="app-backend-base-url" content="https://restaurantsmanagement26backend-production.up.railway.app" />
-  <meta name="app-api-base-url" content="https://restaurantsmanagement26backend-production.up.railway.app/api" />
+ <meta name="app-backend-base-url" content="https://production-backend-fc-01-1.onrender.com" />
+<meta name="app-api-base-url" content="https://production-backend-fc-01-1.onrender.com/api" />
 <meta name="app-allow-order-whatsapp-fallback-on-save-failure" content="false" />
 <meta name="app-open-whatsapp-after-verified-online-payment" content="true" />
+<meta name="app-room-combined-checkout-frontend-enabled" content="false" />
 <meta name="app-contact-sheet-url" content="" />
 
   <title>Hotel Dining Experience</title>
@@ -20,7 +21,7 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,600&family=Jost:wght@200;300;400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
 
   <!-- Icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
@@ -34,11 +35,12 @@
 
   <link rel="stylesheet" href="css/style.css" />
 </head>
-<body class="app-booting">
+<body class="public-home-page app-booting">
+  <a class="skip-link" href="#mainContent">Skip to main content</a>
 
   <!-- ─── CUSTOM CURSOR ─────────────────────────────────── -->
-  <div class="cursor-dot" id="cursorDot"></div>
-  <div class="cursor-ring" id="cursorRing"></div>
+  <div class="cursor-dot" id="cursorDot" aria-hidden="true"></div>
+  <div class="cursor-ring" id="cursorRing" aria-hidden="true"></div>
 
   <!-- ─── LOADING SCREEN ───────────────────────────────── -->
   <div id="loader" class="loader" role="status" aria-label="Loading">
@@ -50,6 +52,8 @@
       <p class="loader-tagline">Preparing your experience…</p>
     </div>
   </div>
+
+  <div id="notificationRegion" class="notification-region" aria-live="polite" aria-atomic="false" aria-relevant="additions text"></div>
 
   <div id="pageShell">
 
@@ -68,6 +72,7 @@
       <ul class="nav-links" id="navLinks" role="list">
         <li><a href="#about" class="nav-link" data-nav-label="about">About</a></li>
         <li><a href="#menu" class="nav-link" data-nav-label="menu">Menu</a></li>
+        <li data-room-booking-nav hidden><a href="#rooms" class="nav-link" data-nav-label="rooms">Rooms</a></li>
         <li><a href="#gallery" class="nav-link" data-nav-label="gallery">Gallery</a></li>
         <li><a href="#events" class="nav-link" data-nav-label="events">Events</a></li>
         <li><a href="#testimonials" class="nav-link" data-nav-label="testimonials">Reviews</a></li>
@@ -77,10 +82,12 @@
     </div>
   </nav>
 
+  <main id="mainContent" tabindex="-1">
+
   <!-- ─── HERO SECTION ─────────────────────────────────── -->
   <section id="hero" class="hero" aria-label="Hero">
     <canvas id="heroCanvas" aria-hidden="true"></canvas>
-    <img id="heroBackgroundImage" class="hero-background-image" alt="" hidden decoding="async" fetchpriority="high" referrerpolicy="no-referrer" />
+    <img id="heroBackgroundImage" class="hero-background-image" alt="" width="1920" height="1080" hidden decoding="async" fetchpriority="high" referrerpolicy="no-referrer" />
     <div class="hero-overlay" aria-hidden="true"></div>
     <div class="hero-content">
       <!-- <div class="hero-badge" data-anim="fadeDown">Fine Dining Experience</div> -->
@@ -114,11 +121,11 @@
       <div class="about-grid">
         <div class="about-images">
           <div class="about-img-main reveal-img">
-            <img src="img/about.jpg" alt="Elegant restaurant interior with candlelight" loading="lazy" decoding="async" />
+            <img src="img/about.jpg" alt="Elegant restaurant interior with candlelight" width="500" height="333" loading="lazy" decoding="async" />
           </div>
           <div class="about-img-sub reveal-img">
-            <img src="https://images.unsplash.com/photo-1600565193348-f74bd3c7ccdf?w=400&q=80" alt="Chef preparing gourmet dish" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" />
-            <!-- <img src="https://images.unsplash.com/photo-1600565193348-f74bd3c7ccdf?w=400&q=80" alt="Chef preparing gourmet dish" loading="lazy" /> -->
+            <img src="https://images.unsplash.com/photo-1600565193348-f74bd3c7ccdf?w=400&q=80" alt="Chef preparing gourmet dish" width="400" height="500" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" />
+            <!-- <img src="https://images.unsplash.com/photo-1600565193348-f74bd3c7ccdf?w=400&q=80" alt="Chef preparing gourmet dish" width="1376" height="768" loading="lazy" decoding="async" /> -->
          
           </div>
           <div class="about-award glass-card">
@@ -194,6 +201,118 @@
     </div>
   </div>
 </section>
+
+  <section id="rooms" class="rooms-section section" aria-label="Room Booking" hidden>
+    <div class="container">
+      <div class="section-header">
+        <p class="section-eyebrow reveal-text">Stay With Us</p>
+        <h2 class="section-title reveal-text">Rooms &amp; Suites</h2>
+        <p class="section-sub reveal-text">Discover a curated selection, then explore availability for every stay.</p>
+      </div>
+
+      <form id="publicRoomAvailabilityForm" class="rooms-search glass-card" autocomplete="off">
+        <div class="form-group">
+          <label for="publicRoomCheckIn">Check-in</label>
+          <input type="date" id="publicRoomCheckIn" name="checkInDate" required />
+        </div>
+        <div class="form-group">
+          <label for="publicRoomCheckOut">Check-out</label>
+          <input type="date" id="publicRoomCheckOut" name="checkOutDate" required />
+        </div>
+        <div class="form-group">
+          <label for="publicRoomAdults">Adults</label>
+          <input type="number" id="publicRoomAdults" name="adults" min="1" max="20" value="1" required />
+        </div>
+        <div class="form-group">
+          <label for="publicRoomChildren">Children</label>
+          <input type="number" id="publicRoomChildren" name="children" min="0" max="20" value="0" />
+        </div>
+        <button type="submit" class="btn btn-primary rooms-search-btn">
+          <i class="fas fa-calendar-check" aria-hidden="true"></i>
+          <span>Check Availability</span>
+        </button>
+      </form>
+
+      <p id="publicRoomsStatus" class="rooms-status" aria-live="polite"></p>
+      <div id="publicRoomsGrid" class="rooms-grid" aria-live="polite"></div>
+      <div class="rooms-explore-cta">
+        <a id="publicRoomsExploreAll" class="btn btn-gold" href="rooms.html">
+          <span>Explore All Rooms</span>
+          <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+
+      <form id="publicRoomBookingForm" class="room-booking-form glass-card" autocomplete="off" hidden>
+        <input type="hidden" id="publicBookingRoomId" name="roomId" />
+        <div class="room-booking-form-head">
+          <div>
+            <p class="section-eyebrow">Booking Request</p>
+            <h3 id="publicBookingRoomTitle">Selected Room</h3>
+          </div>
+          <button type="button" id="publicBookingCloseBtn" class="room-booking-close" aria-label="Close booking request">
+            <i class="fas fa-times" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <div id="publicBookingSummary" class="room-booking-summary"></div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="publicBookingGuestName">Guest Name *</label>
+            <input type="text" id="publicBookingGuestName" name="guestName" maxlength="160" required />
+          </div>
+          <div class="form-group">
+            <label for="publicBookingGuestPhone">Phone *</label>
+            <input type="tel" id="publicBookingGuestPhone" name="guestPhone" maxlength="30" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="publicBookingGuestEmail">Email</label>
+            <input type="email" id="publicBookingGuestEmail" name="guestEmail" maxlength="320" />
+          </div>
+          <div class="form-group">
+            <label for="publicBookingNotes">Notes</label>
+            <input type="text" id="publicBookingNotes" name="notes" maxlength="1000" placeholder="Arrival time, extra bed, etc." />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-gold room-booking-submit">
+          <i class="fas fa-paper-plane" aria-hidden="true"></i>
+          <span>Submit Booking Request</span>
+        </button>
+      </form>
+
+      <dialog id="publicRoomGalleryDialog" class="public-room-gallery room-gallery" aria-labelledby="publicRoomGalleryTitle" aria-describedby="publicRoomGalleryCaption" aria-modal="true">
+        <header class="public-room-gallery-head room-gallery__header">
+          <div class="room-gallery__heading">
+            <p class="section-eyebrow">Room Gallery</p>
+            <h3 id="publicRoomGalleryTitle">Room photos</h3>
+          </div>
+          <div class="public-room-gallery-head-actions room-gallery__header-actions">
+            <span id="publicRoomGalleryCounter" class="room-gallery__counter" aria-live="polite" aria-atomic="true">1 / 1</span>
+            <button id="publicRoomGalleryFullscreen" type="button" class="room-booking-close room-gallery__utility" aria-label="View gallery full screen"><i class="fas fa-expand" aria-hidden="true"></i></button>
+            <button id="publicRoomGalleryClose" type="button" class="room-booking-close room-gallery__close" aria-label="Close room gallery"><i class="fas fa-times" aria-hidden="true"></i></button>
+          </div>
+        </header>
+        <div id="publicRoomGalleryStage" class="public-room-gallery-stage room-gallery__stage" aria-busy="true">
+          <p id="publicRoomGalleryLoading" class="room-gallery__loading" role="status">Loading room photo…</p>
+          <p id="publicRoomGalleryError" class="room-gallery__error" role="status" hidden>This room photo could not be loaded.</p>
+          <button id="publicRoomGalleryPrevious" type="button" class="public-room-gallery-arrow room-gallery__nav room-gallery__nav--previous is-previous" aria-label="Previous room photo"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
+          <img id="publicRoomGalleryImage" class="room-gallery__image" alt="" width="1600" height="900" loading="eager" fetchpriority="high" decoding="async" referrerpolicy="no-referrer">
+          <button id="publicRoomGalleryNext" type="button" class="public-room-gallery-arrow room-gallery__nav room-gallery__nav--next is-next" aria-label="Next room photo"><i class="fas fa-chevron-right" aria-hidden="true"></i></button>
+        </div>
+        <div class="public-room-gallery-meta room-gallery__meta">
+          <p id="publicRoomGalleryCaption"></p>
+        </div>
+        <div id="publicRoomGalleryThumbnails" class="public-room-gallery-thumbnails room-gallery__thumbnails" role="listbox" aria-label="Choose a room photo"></div>
+        <footer class="room-gallery__footer">
+          <button id="publicRoomGalleryBook" type="button" class="btn btn-gold room-gallery__book"><span>Request this room</span></button>
+        </footer>
+      </dialog>
+    </div>
+  </section>
 
   <div id="cartBackdrop" class="cart-backdrop" hidden></div>
 
@@ -330,7 +449,7 @@
   <!-- ─── RESERVATION SECTION ──────────────────────────── -->
   <section id="reservation" class="reservation section" aria-label="Table Reservation">
     <div class="reservation-bg" aria-hidden="true">
-      <img src="https://images.unsplash.com/photo-1550966871-3ed3cfd27974?w=1600&q=80" alt="" role="presentation" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" />
+      <img src="https://images.unsplash.com/photo-1550966871-3ed3cfd27974?w=1600&q=80" alt="" role="presentation" width="1600" height="900" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" />
       <div class="reservation-overlay"></div>
     </div>
     <div class="container">
@@ -459,7 +578,7 @@
       <div class="events-grid" id="eventsCards">
         <div class="event-card glass-card reveal-card" tabindex="0">
           <div class="event-icon"><i class="fas fa-heart" aria-hidden="true"></i></div>
-          <img src="img/eventarea1.png" alt="Wedding reception at Aurum" loading="lazy" />
+          <img src="img/eventarea1.webp" alt="Wedding reception at Aurum" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="event-content">
             <h3>Anniversaries</h3>
             <p>Create an enchanting celebration with bespoke menus, floral arrangements, and personalized service for your most special day.</p>
@@ -472,7 +591,7 @@
         </div>
         <div class="event-card glass-card reveal-card" tabindex="0">
           <div class="event-icon"><i class="fas fa-birthday-cake" aria-hidden="true"></i></div>
-          <img src="img/eventarea1.png" alt="Birthday celebration" loading="lazy" />
+          <img src="img/eventarea1.webp" alt="Birthday celebration" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="event-content">
             <h3>Birthday Celebrations</h3>
             <p>Mark every milestone with a luxurious private dinner, custom cake, and an evening crafted entirely around you.</p>
@@ -485,7 +604,7 @@
         </div>
         <div class="event-card glass-card reveal-card" tabindex="0">
           <div class="event-icon"><i class="fas fa-briefcase" aria-hidden="true"></i></div>
-          <img src="img/eventarea3.png" alt="Corporate event dining" loading="lazy" />
+          <img src="img/eventarea3.webp" alt="Corporate event dining" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="event-content">
             <h3>Corporate Events</h3>
             <p>Impress clients and colleagues with an impeccable fine dining experience that elevates every business occasion.</p>
@@ -564,35 +683,35 @@
       </div>
       <div class="gallery-grid" role="list">
         <div class="gallery-item gallery-item--large" role="listitem">
-          <img src="img/1.png" alt="Exquisite plated dish" loading="lazy" />
+          <img src="img/1.webp" alt="Exquisite plated dish" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div>
         <!-- <div class="gallery-item" role="listitem">
-          <img src="img/2.png" alt="Restaurant ambiance" loading="lazy" />
+          <img src="img/2.png" alt="Restaurant ambiance" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div> -->
         <div class="gallery-item" role="listitem">
-          <img src="img/3.png" alt="Gourmet cocktail" loading="lazy" />
+          <img src="img/3.webp" alt="Gourmet cocktail" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div>
         <div class="gallery-item gallery-item--tall" role="listitem">
-          <img src="img/4.png" alt="Chef cooking in open kitchen" loading="lazy" />
+          <img src="img/4.webp" alt="Chef cooking in open kitchen" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div>
         <!-- <div class="gallery-item" role="listitem">
-          <img src="img/5.png" alt="Colorful gourmet salad" loading="lazy" />
+          <img src="img/5.png" alt="Colorful gourmet salad" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div> -->
         <!-- <div class="gallery-item" role="listitem">
-          <img src="img/6.png" alt="Artisan pancakes" loading="lazy" />
+          <img src="img/6.png" alt="Artisan pancakes" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div> -->
         <div class="gallery-item gallery-item--wide" role="listitem">
-          <img src="img/8.png" alt="Fine dining table setting" loading="lazy" />
+          <img src="img/8.webp" alt="Fine dining table setting" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div>
         <div class="gallery-item" role="listitem">
-          <img src="img/7.png" alt="Gourmet burger and fries" loading="lazy" />
+          <img src="img/7.webp" alt="Gourmet burger and fries" width="1376" height="768" loading="lazy" decoding="async" />
           <div class="gallery-overlay"><i class="fas fa-expand" aria-hidden="true"></i></div>
         </div>
       </div>
@@ -603,7 +722,7 @@
       <button class="lightbox-prev" id="lightboxPrev" aria-label="Previous image"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
       <button class="lightbox-next" id="lightboxNext" aria-label="Next image"><i class="fas fa-chevron-right" aria-hidden="true"></i></button>
       <div class="lightbox-content">
-        <img id="lightboxImg" src="" alt="Gallery full view" />
+        <img id="lightboxImg" src="" alt="Gallery full view" width="1376" height="768" decoding="async" />
       </div>
     </div>
   </section>
@@ -793,11 +912,13 @@
   </div>
    </section>
 
+  </main>
+
   <!-- Whatsapp Inquairy -->
 <!-- ─── WHATSAPP FLOAT BUTTON ───────────────────────── -->
-<div class="whatsapp-float" id="whatsappBtn">
-  <i class="fab fa-whatsapp"></i>
-</div>
+<button type="button" class="whatsapp-float" id="whatsappBtn" aria-label="Open WhatsApp actions" aria-expanded="false" aria-controls="waPopup">
+  <i class="fab fa-whatsapp" aria-hidden="true"></i>
+</button>
 <div class="wa-popup" id="waPopup">
   <div class="wa-box glass-card">
     <h3>Welcome</h3>
@@ -843,6 +964,45 @@
 </div>
 
   <!-- ─── FOOTER ───────────────────────────────────────── -->
+<div
+  id="hotelPopupModal"
+  class="hotel-popup"
+  hidden
+  aria-hidden="true"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="hotelPopupTitle"
+>
+  <div class="hotel-popup__backdrop" data-hotel-popup-close></div>
+  <div class="hotel-popup__dialog glass-card" role="document" tabindex="-1" aria-describedby="hotelPopupDescription">
+    <button type="button" class="hotel-popup__close" aria-label="Close hotel notification" data-hotel-popup-close>
+      <i class="fas fa-times" aria-hidden="true"></i>
+    </button>
+    <div class="hotel-popup__media" id="hotelPopupMediaWrap" hidden>
+      <img id="hotelPopupImage" class="hotel-popup__image" alt="" width="1200" height="800" decoding="async" />
+    </div>
+    <div class="hotel-popup__body">
+      <p class="hotel-popup__eyebrow">Hotel Update</p>
+      <h3 id="hotelPopupTitle" class="hotel-popup__title"></h3>
+      <p id="hotelPopupDescription" class="hotel-popup__description"></p>
+      <label class="hotel-popup__dismiss-option" id="hotelPopupDismissOption">
+        <input type="checkbox" id="hotelPopupDismissTodayInput" />
+        <span>Don't show again today</span>
+      </label>
+      <a
+        id="hotelPopupCta"
+        href="#"
+        target="_self"
+        rel="noopener noreferrer"
+        class="btn btn-primary hotel-popup__cta"
+        hidden
+      >
+        <span id="hotelPopupCtaText"></span>
+      </a>
+    </div>
+  </div>
+</div>
+
 <footer class="footer" role="contentinfo">
   <div class="footer-top">
     <div class="container footer-grid">
@@ -921,10 +1081,11 @@
 
   <!-- <script src="js/data.js"></script> -->
   <script src="js/three-scene.js" defer></script>
-  <script src="js/app-config.js"></script>
+  <script src="js/app-config.js" defer></script>
   <script src="js/data-loader.js" defer></script>
-  <script src="js/assistant-action-bridge.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/review-avatar.js" defer></script>
+  <script src="js/assistant-action-bridge.js" defer></script>
+  <script src="js/main.js" defer></script>
 
 </body>
 </html>

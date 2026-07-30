@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="app-backend-base-url" content="https://restaurantsmanagement26backend-production.up.railway.app" />
-  <meta name="app-api-base-url" content="https://restaurantsmanagement26backend-production.up.railway.app/api" />
+  <meta name="referrer" content="no-referrer" />
+<meta name="app-backend-base-url" content="https://production-backend-fc-01-1.onrender.com" />
+<meta name="app-api-base-url" content="https://production-backend-fc-01-1.onrender.com/api" />
 <meta name="app-allow-order-whatsapp-fallback-on-save-failure" content="false" />
 <meta name="app-open-whatsapp-after-verified-online-payment" content="true" />
+<meta name="app-room-combined-checkout-frontend-enabled" content="false" />
 <meta name="app-contact-sheet-url" content="" />
   <title>Admin Dashboard</title>
   <!-- <link rel="stylesheet" href="css/style.css" /> -->
@@ -20,7 +22,13 @@
     }
     #hotelFormSection,
 #menuFormSection,
+#menuComboFormSection,
 #galleryFormSection,
+#popupNotificationFormSection,
+#roomTypeFormSection,
+#roomFormSection,
+#roomBookingFormSection,
+#roomFeatureSettingsSection,
 #profileFormSection {
   max-height: 80vh;
   overflow-y: auto;
@@ -160,8 +168,15 @@ body {
 
     #hotelFormSection .admin-field-label,
     #menuFormSection .admin-field-label,
+    #menuComboFormSection .admin-field-label,
     #galleryFormSection .admin-field-label,
+    #popupNotificationFormSection .admin-field-label,
+    #roomTypeFormSection .admin-field-label,
+    #roomFormSection .admin-field-label,
+    #roomBookingFormSection .admin-field-label,
+    #roomFeatureSettingsSection .admin-field-label,
     #notificationSettingsSection .admin-field-label,
+    #orderingSettingsSection .admin-field-label,
     #paymentRouteSettingsSection .admin-field-label,
     #uploadSection .admin-field-label,
     #qrTableLinkSection .admin-field-label,
@@ -178,6 +193,150 @@ body {
       color: #9f9f9f;
       font-size: 12px;
       line-height: 1.4;
+    }
+
+    .popup-preview-shell {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 14px;
+      border: 1px solid #2f2f2f;
+      background: #141414;
+    }
+
+    .popup-preview-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .popup-preview-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid #3a3a3a;
+      background: #1c1c1c;
+      color: #e6e6e6;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .popup-preview-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid rgba(201, 168, 76, 0.22);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+        rgba(14, 14, 14, 0.9);
+      box-shadow:
+        0 18px 42px rgba(0, 0, 0, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .popup-preview-media {
+      min-height: 260px;
+      background:
+        linear-gradient(160deg, rgba(201, 168, 76, 0.2), rgba(255, 255, 255, 0.03)),
+        rgba(255, 255, 255, 0.03);
+    }
+
+    .popup-preview-media img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 260px;
+      object-fit: cover;
+    }
+
+    .popup-preview-body {
+      display: grid;
+      gap: 14px;
+      align-content: center;
+      padding: 28px 28px 26px;
+    }
+
+    .popup-preview-eyebrow {
+      margin: 0;
+      color: #c9a84c;
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .popup-preview-title {
+      margin: 0;
+      font-size: clamp(28px, 3vw, 40px);
+      line-height: 1.08;
+      color: #fff;
+    }
+
+    .popup-preview-description {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.84);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .popup-preview-dismiss {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: fit-content;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 14px;
+    }
+
+    .popup-preview-dismiss input {
+      margin: 0;
+      accent-color: #c9a84c;
+    }
+
+    .popup-preview-cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      width: fit-content;
+      padding: 0 18px;
+      border-radius: 999px;
+      background: #c9a84c;
+      color: #111;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .popup-preview-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(14, 14, 14, 0.5);
+      color: #fff;
+      cursor: default;
+    }
+
+    @media (max-width: 840px) {
+      .popup-preview-card {
+        grid-template-columns: 1fr;
+      }
+
+      .popup-preview-media,
+      .popup-preview-media img {
+        min-height: 200px;
+      }
+
+      .popup-preview-body {
+        padding: 24px 22px 22px;
+      }
     }
 
     .admin-tab {
@@ -550,8 +709,29 @@ body {
       font-size: 12px;
     }
 
+    .admin-order-items {
+      margin: 12px 0 0;
+      padding-left: 20px;
+      color: #ddd;
+      line-height: 1.6;
+    }
+
+    .admin-order-items li + li {
+      margin-top: 8px;
+    }
+
+    .admin-order-item-meta {
+      margin-top: 4px;
+      color: #aaa;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
     #hotelFormSection,
-    #menuFormSection {
+    #menuFormSection,
+    #roomTypeFormSection,
+    #roomFormSection,
+    #roomBookingFormSection {
       position: relative;
       overflow: visible;
       margin-top: 20px;
@@ -559,13 +739,24 @@ body {
     }
 
     #hotelFormSection form,
-    #menuFormSection form {
+    #menuFormSection form,
+    #roomTypeFormSection form,
+    #roomFormSection form,
+    #roomBookingFormSection form {
       position: relative;
       z-index: 1;
     }
 
     #hotelFormSection input:not([type="hidden"]),
-    #menuFormSection input:not([type="hidden"]) {
+    #menuFormSection input:not([type="hidden"]),
+    #roomTypeFormSection input:not([type="hidden"]),
+    #roomTypeFormSection textarea,
+    #roomFormSection input:not([type="hidden"]),
+    #roomFormSection select,
+    #roomFormSection textarea,
+    #roomBookingFormSection input:not([type="hidden"]),
+    #roomBookingFormSection select,
+    #roomBookingFormSection textarea {
       width: 100%;
       box-sizing: border-box;
       background: #161616;
@@ -581,7 +772,15 @@ body {
     }
 
     #hotelFormSection input:not([type="hidden"]):focus,
-    #menuFormSection input:not([type="hidden"]):focus {
+    #menuFormSection input:not([type="hidden"]):focus,
+    #roomTypeFormSection input:not([type="hidden"]):focus,
+    #roomTypeFormSection textarea:focus,
+    #roomFormSection input:not([type="hidden"]):focus,
+    #roomFormSection select:focus,
+    #roomFormSection textarea:focus,
+    #roomBookingFormSection input:not([type="hidden"]):focus,
+    #roomBookingFormSection select:focus,
+    #roomBookingFormSection textarea:focus {
       outline: none;
       border-color: #c9a84c;
       box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.2);
@@ -589,7 +788,10 @@ body {
     }
 
     #hotelFormSection label,
-    #menuFormSection label {
+    #menuFormSection label,
+    #roomTypeFormSection label,
+    #roomFormSection label,
+    #roomBookingFormSection label {
       display: flex;
       gap: 8px;
       align-items: center;
@@ -600,7 +802,12 @@ body {
     #hotelFormSection label.admin-checkbox,
     #menuFormSection label.admin-checkbox,
     #galleryFormSection label.admin-checkbox,
+    #popupNotificationFormSection label.admin-checkbox,
+    #roomTypeFormSection label.admin-checkbox,
+    #roomFormSection label.admin-checkbox,
+    #roomFeatureSettingsSection label.admin-checkbox,
     #notificationSettingsSection label.admin-checkbox,
+    #orderingSettingsSection label.admin-checkbox,
     #paymentRouteSettingsSection label.admin-checkbox {
       display: flex;
       gap: 8px;
@@ -610,12 +817,18 @@ body {
     }
 
     #hotelFormSection input[type="checkbox"],
-    #menuFormSection input[type="checkbox"] {
+    #menuFormSection input[type="checkbox"],
+    #roomTypeFormSection input[type="checkbox"],
+    #roomFormSection input[type="checkbox"] {
       width: auto;
       accent-color: #c9a84c;
       cursor: pointer;
     }
 
+    #orderingSettingsSection input:not([type="hidden"]),
+    #orderingSettingsSection textarea,
+    #roomFeatureSettingsSection input:not([type="hidden"]),
+    #roomFeatureSettingsSection select,
     #paymentRouteSettingsSection input:not([type="hidden"]),
     #paymentRouteSettingsSection select,
     #qrTableLinkSection input:not([type="hidden"]),
@@ -629,6 +842,10 @@ body {
       border-radius: 8px;
     }
 
+    #orderingSettingsSection input:focus,
+    #orderingSettingsSection textarea:focus,
+    #roomFeatureSettingsSection input:focus,
+    #roomFeatureSettingsSection select:focus,
     #paymentRouteSettingsSection input:focus,
     #paymentRouteSettingsSection select:focus,
     #qrTableLinkSection input:focus,
@@ -641,26 +858,56 @@ body {
     #qrTableLinkOutput {
       font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     }
-  </style>
+  .room-advance-panel {
+      border: 1px solid rgba(170, 120, 50, .32);
+      border-radius: 14px;
+      padding: 16px;
+      background: rgba(255, 249, 238, .76);
+    }
+    .room-advance-panel legend { font-weight: 700; padding: 0 8px; }
+    .room-advance-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
+    @media (max-width: 720px) {
+      .room-advance-grid { grid-template-columns: 1fr; }
+      .room-advance-panel { padding: 12px; }
+    }
+</style>
+  <link rel="stylesheet" href="css/admin-login-branding.css" />
+  <link rel="stylesheet" href="css/room-checkout-receipt.css">
+  <link rel="stylesheet" href="css/admin.css" />
 </head>
-<body>
+<body class="admin-page">
+  <div id="adminBootStatus" class="admin-boot-status" role="status" aria-live="polite">Loading admin workspace…</div>
 
   <div id="adminLoginWrap" class="admin-wrap" style="max-width: 520px; display:none;">
+  <a class="admin-skip-link" href="#adminLoginForm">Skip to login form</a>
   <header class="admin-header">
     <h1 class="admin-title">Admin Login</h1>
     <p class="admin-sub">Sign in to access your operator dashboard.</p>
   </header>
 
   <section class="admin-card">
-    <form id="adminLoginForm" class="admin-grid">
-      <input id="adminEmailInput" type="email" placeholder="Email" required />
-      <input id="adminPasswordInput" type="password" placeholder="Password" required />
+    <form id="adminLoginForm" class="admin-grid" aria-describedby="adminLoginStatus">
+      <div class="admin-field">
+        <label class="admin-field-label" for="adminEmailInput">Email</label>
+        <input id="adminEmailInput" type="email" placeholder="Email" autocomplete="email" required />
+      </div>
+      <div class="admin-field">
+        <label class="admin-field-label" for="adminPasswordInput">Password</label>
+        <input id="adminPasswordInput" type="password" placeholder="Password" autocomplete="current-password" required />
+      </div>
       <button type="submit" class="status-btn">Login</button>
+      <p id="adminLoginStatus" class="admin-inline-status" role="alert" aria-live="assertive"></p>
     </form>
   </section>
 </div>
 
   <div class="admin-wrap" id="adminDashboardWrap" style="display:none;">
+    <a class="admin-skip-link" href="#adminContent">Skip to dashboard content</a>
     <header class="admin-header">
       <h1 class="admin-title">Admin Dashboard</h1>
       <p class="admin-sub">Manage all hotel orders, reservations, inquiries, and hotels from one place.</p>
@@ -670,16 +917,19 @@ body {
       <div class="admin-toolbar-row">
         <div class="admin-toolbar-group">
           <p class="admin-toolbar-label">Browse Records</p>
-          <div class="admin-tabs">
-            <button class="admin-tab active" data-tab="orders">Orders</button>
-            <button class="admin-tab" data-tab="reservations">Reservations</button>
-            <button class="admin-tab" data-tab="inquiries">Inquiries</button>
-            <button class="admin-tab" data-tab="contact-submissions">Contact Messages</button>
-            <button class="admin-tab" data-tab="notification-events">Notifications</button>
-            <button class="admin-tab" data-tab="hotels">Hotels</button>
-            <button class="admin-tab" data-tab="menu-items">Menu Items</button>
-            <button class="admin-tab" data-tab="gallery-items">Gallery Items</button>
-            <button class="admin-tab" data-tab="testimonials">Testimonials</button>
+          <div class="admin-tabs" role="tablist" aria-label="Admin record sections">
+            <button class="admin-tab active" type="button" role="tab" aria-controls="adminContent" aria-selected="true" data-tab="orders">Orders</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="reservations">Reservations</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="inquiries">Inquiries</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="contact-submissions">Contact Messages</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="notification-events">Notifications</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="hotels">Hotels</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="rooms">Rooms</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="menu-items">Menu Items</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="menu-combos">Combo Offers</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="gallery-items">Gallery Items</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="popup-notifications">Popup Notifications</button>
+            <button class="admin-tab" type="button" role="tab" aria-controls="adminContent" aria-selected="false" data-tab="testimonials">Testimonials</button>
           </div>
         </div>
 
@@ -687,10 +937,17 @@ body {
           <p class="admin-toolbar-label">Open Editors</p>
           <div class="admin-toolbar-actions">
             <button type="button" id="openHotelFormBtn" class="admin-tab">Hotel Form</button>
+            <button type="button" id="openRoomTypeFormBtn" class="admin-tab">Room Type Form</button>
+            <button type="button" id="openRoomFormBtn" class="admin-tab">Room Form</button>
+            <button type="button" id="openRoomBookingFormBtn" class="admin-tab">Manual Room Booking</button>
             <button type="button" id="openMenuFormBtn" class="admin-tab">Menu Form</button>
+            <button type="button" id="openMenuComboFormBtn" class="admin-tab">Combo Form</button>
             <button type="button" id="openGalleryFormBtn" class="admin-tab">Gallery Form</button>
+            <button type="button" id="openPopupNotificationFormBtn" class="admin-tab">Popup Form</button>
             <button type="button" id="openTestimonialFormBtn" class="admin-tab">Testimonials Form</button>
             <button type="button" id="openNotificationSettingsBtn" class="admin-tab">Notification Settings</button>
+            <button type="button" id="openOrderingSettingsBtn" class="admin-tab">Ordering Settings</button>
+            <button type="button" id="openRoomFeatureSettingsBtn" class="admin-tab">Modules and Features</button>
             <button type="button" id="openPaymentRouteSettingsBtn" class="admin-tab">Payment Route Settings</button>
             <button type="button" id="openProfileFormBtn" class="admin-tab">Profile Form</button>
             <button type="button" id="openQrTableLinkBtn" class="admin-tab">QR Table Link</button>
@@ -699,7 +956,7 @@ body {
         </div>
 
         <div class="admin-toolbar-side">
-          <p class="admin-toolbar-label">Hotel Scope</p>
+          <label class="admin-toolbar-label" for="hotelFilter">Hotel Scope</label>
           <p class="admin-toolbar-help">Choose one hotel to narrow list views and auto-fill editor forms where supported.</p>
           <select id="hotelFilter" class="admin-select">
             <option value="">All Hotels</option>
@@ -724,7 +981,7 @@ body {
       <p id="adminScopeHelp" class="admin-toolbar-help">List views respect the selected hotel filter when available.</p>
     </section>
 
-    <main id="adminContent" class="admin-section">
+    <main id="adminContent" class="admin-section" aria-busy="true" tabindex="-1">
       <p class="loading-state">Loading dashboard...</p>
     </main>
 
@@ -766,6 +1023,386 @@ body {
         </div>
         <p id="qrTableLinkHelp" class="admin-field-hint">No QR link generated yet.</p>
       </div>
+    </section>
+
+    <section id="roomFeatureSettingsSection" class="admin-card" style="display:none; margin-top: 20px;">
+      <h2>Hotel Modules and Features</h2>
+      <p class="admin-sub">Configure Restaurant-only, Hotel-only, or combined businesses without deleting historical data.</p>
+      <p class="admin-form-help">These hotel-scoped controls are enforced by backend API guards and the staff workspace. Disabling a module hides and blocks it; existing orders, bookings, payments, and invoices remain stored.</p>
+
+      <form id="roomFeatureSettingsForm" class="admin-grid">
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomFeatureSettingsHotelSlugInput">Hotel Slug (Required)</label>
+          <input id="roomFeatureSettingsHotelSlugInput" placeholder="hotel-example" maxlength="120" required />
+          <p class="admin-field-hint">This usually auto-fills from the selected hotel scope.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="hotelBusinessTypeInput">Business Type</label>
+          <select id="hotelBusinessTypeInput">
+            <option value="restaurant_only">Restaurant Only</option>
+            <option value="hotel_only">Hotel Only</option>
+            <option value="hotel_restaurant">Hotel + Restaurant</option>
+          </select>
+          <p class="admin-field-hint">Selecting a business type sets the two top-level modules. Detailed switches remain dependency-aware.</p>
+        </div>
+
+        <h3>Core Modules</h3>
+
+        <label class="admin-checkbox">
+          <input id="hotelFeatureFoodModuleEnabledInput" type="checkbox" checked />
+          Enable Food Operations
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="hotelFeatureRoomModuleEnabledInput" type="checkbox" />
+          Enable Room Operations
+        </label>
+
+        <h3>Operational Features</h3>
+
+        <label class="admin-checkbox">
+          <input id="roomFeatureFoodOrderingEnabledInput" type="checkbox" checked />
+          Enable Food Ordering
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="roomFeatureRoomBookingEnabledInput" type="checkbox" />
+          Enable Room Booking For This Hotel
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="roomFeatureRoomServiceEnabledInput" type="checkbox" />
+          Enable Room Service Linking
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="hotelFeatureCombinedBillingEnabledInput" type="checkbox" />
+          Enable Combined Billing
+        </label>
+
+        <h3>Reports</h3>
+
+        <label class="admin-checkbox">
+          <input id="hotelFeatureFoodReportsEnabledInput" type="checkbox" checked />
+          Enable Food Reports
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="hotelFeatureRoomReportsEnabledInput" type="checkbox" />
+          Enable Room Reports
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="hotelFeatureCombinedReportsEnabledInput" type="checkbox" />
+          Enable Combined Reports
+        </label>
+
+        <button type="submit" class="status-btn">Save Hotel Modules</button>
+        <p id="roomFeatureDependencyHelp" class="admin-field-hint" role="status" aria-live="polite">Room Service and Combined Reports require both core modules.</p>
+        <p id="roomFeatureSettingsHelp" class="admin-field-hint">Hotel module settings are not loaded yet.</p>
+      </form>
+    </section>
+
+    <section id="roomTypeFormSection" class="admin-card" style="display:none;">
+      <h2>Create Room Type</h2>
+      <p class="admin-form-help">Use this form for room categories such as Deluxe, Suite, Family Room, or Dormitory. It only writes to the new room booking tables.</p>
+      <form id="roomTypeForm" class="admin-grid">
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomTypeHotelSlugInput">Hotel Slug (Required)</label>
+          <input id="roomTypeHotelSlugInput" name="hotelSlug" placeholder="hotel-example" maxlength="120" required />
+          <p class="admin-field-hint">This usually auto-fills from the selected hotel scope.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomTypeNameInput">Room Type Name (Required)</label>
+          <input id="roomTypeNameInput" name="name" placeholder="Deluxe Room" maxlength="150" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomTypeBasePriceInput">Base Price</label>
+          <input id="roomTypeBasePriceInput" name="basePrice" type="number" min="0" step="0.01" placeholder="2500" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomTypeMaxAdultsInput">Max Adults</label>
+          <input id="roomTypeMaxAdultsInput" name="maxAdults" type="number" min="0" step="1" placeholder="2" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomTypeMaxChildrenInput">Max Children</label>
+          <input id="roomTypeMaxChildrenInput" name="maxChildren" type="number" min="0" step="1" placeholder="1" />
+        </div>
+
+        <label class="admin-checkbox">
+          <input id="roomTypeIsActiveInput" name="isActive" type="checkbox" checked />
+          Active
+        </label>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomTypeAmenitiesInput">Amenities</label>
+          <textarea id="roomTypeAmenitiesInput" name="amenities" rows="3" placeholder="Wi-Fi&#10;AC&#10;Breakfast"></textarea>
+          <p class="admin-field-hint">Add one amenity per line. These save as structured room type amenities.</p>
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomTypeImagesInput">Image URLs</label>
+          <textarea id="roomTypeImagesInput" name="images" rows="3" placeholder="https://example.com/room.jpg"></textarea>
+          <p class="admin-field-hint">Add one image URL per line. Upload support can be connected in a later safe step.</p>
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomTypeDescriptionInput">Description</label>
+          <textarea id="roomTypeDescriptionInput" name="description" rows="4" maxlength="4000" placeholder="Short public-facing room type description"></textarea>
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomTypeCancellationPolicyInput">Cancellation Policy</label>
+          <textarea id="roomTypeCancellationPolicyInput" name="cancellationPolicy" rows="3" maxlength="4000" placeholder="Free cancellation up to 24 hours before check-in"></textarea>
+        </div>
+
+        <button type="submit" class="status-btn">Save Room Type</button>
+        <p id="roomTypeFormHelp" class="admin-field-hint">Room booking must be enabled for the hotel before public customers can see rooms.</p>
+      </form>
+    </section>
+
+    <section id="roomFormSection" class="admin-card" style="display:none;">
+      <h2>Create Room</h2>
+      <p class="admin-form-help">Use this form for individual sellable rooms. Availability and booking conflict protection stay on the backend.</p>
+      <form id="roomForm" class="admin-grid">
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomHotelSlugInput">Hotel Slug (Required)</label>
+          <input id="roomHotelSlugInput" name="hotelSlug" placeholder="hotel-example" maxlength="120" required />
+          <p class="admin-field-hint">This usually auto-fills from the selected hotel scope.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomRoomTypeIdInput">Room Type ID</label>
+          <input id="roomRoomTypeIdInput" name="roomTypeId" type="number" min="1" step="1" placeholder="Optional room_types.id" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomNumberInput">Room Number (Required)</label>
+          <input id="roomNumberInput" name="roomNumber" placeholder="101" maxlength="80" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomTitleInput">Room Title</label>
+          <input id="roomTitleInput" name="title" placeholder="Deluxe Lake View" maxlength="160" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomFloorInput">Floor</label>
+          <input id="roomFloorInput" name="floor" placeholder="1st Floor" maxlength="80" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBedTypeInput">Bed Type</label>
+          <input id="roomBedTypeInput" name="bedType" placeholder="King Bed" maxlength="120" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomCapacityInput">Capacity</label>
+          <input id="roomCapacityInput" name="capacity" type="number" min="0" step="1" placeholder="3" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomMaxAdultsInput">Max Adults</label>
+          <input id="roomMaxAdultsInput" name="maxAdults" type="number" min="0" step="1" placeholder="2" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomMaxChildrenInput">Max Children</label>
+          <input id="roomMaxChildrenInput" name="maxChildren" type="number" min="0" step="1" placeholder="1" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBasePriceInput">Base Price</label>
+          <input id="roomBasePriceInput" name="basePrice" type="number" min="0" step="0.01" placeholder="2500" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomDiscountPriceInput">Discounted Nightly Price (amount, not %)</label>
+          <input id="roomDiscountPriceInput" name="discountPrice" type="number" min="0" step="0.01" placeholder="2200" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomTaxPercentInput">Tax/GST Percent</label>
+          <input id="roomTaxPercentInput" name="taxPercent" type="number" min="0" max="100" step="0.01" placeholder="12" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomStatusInput">Room Status</label>
+          <select id="roomStatusInput" name="status">
+            <option value="available">Available</option>
+            <option value="booked">Booked</option>
+            <option value="occupied">Occupied</option>
+            <option value="cleaning">Cleaning</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+
+        <label class="admin-checkbox">
+          <input id="roomIsActiveInput" name="isActive" type="checkbox" checked />
+          Active
+        </label>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomAmenitiesInput">Amenities</label>
+          <textarea id="roomAmenitiesInput" name="amenities" rows="3" placeholder="Wi-Fi&#10;AC&#10;Mini fridge"></textarea>
+          <p class="admin-field-hint">Add one amenity per line.</p>
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomImagesInput">Image URLs</label>
+          <textarea id="roomImagesInput" name="images" rows="3" placeholder="https://example.com/room-101.jpg"></textarea>
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomDescriptionInput">Description</label>
+          <textarea id="roomDescriptionInput" name="description" rows="4" maxlength="4000" placeholder="Room-specific notes or public description"></textarea>
+        </div>
+
+        <button type="submit" class="status-btn">Save Room</button>
+        <p id="roomFormHelp" class="admin-field-hint">Maintenance, inactive, booked, and occupied rooms are excluded from public availability.</p>
+      </form>
+    </section>
+
+    <section id="roomBookingFormSection" class="admin-card" style="display:none;">
+      <h2>Create Manual Room Booking</h2>
+      <p class="admin-form-help">Use this for walk-in, phone, WhatsApp, or admin-created room bookings. The backend recalculates totals and blocks overlapping bookings.</p>
+      <form id="roomBookingForm" class="admin-grid">
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingHotelSlugInput">Hotel Slug (Required)</label>
+          <input id="roomBookingHotelSlugInput" name="hotelSlug" placeholder="hotel-example" maxlength="120" required />
+          <p class="admin-field-hint">Choose a hotel scope first to load that hotel's rooms.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingRoomIdInput">Room (Required)</label>
+          <select id="roomBookingRoomIdInput" name="roomId" required>
+            <option value="">Select a hotel first</option>
+          </select>
+          <p id="roomBookingRoomHelp" class="admin-field-hint">Only active rooms for this hotel are listed here.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingCheckInInput">Check-in Date (Required)</label>
+          <input id="roomBookingCheckInInput" name="checkInDate" type="date" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingCheckOutInput">Check-out Date (Required)</label>
+          <input id="roomBookingCheckOutInput" name="checkOutDate" type="date" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingGuestNameInput">Guest Name (Required)</label>
+          <input id="roomBookingGuestNameInput" name="guestName" maxlength="160" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingGuestPhoneInput">Guest Phone (Required)</label>
+          <input id="roomBookingGuestPhoneInput" name="guestPhone" maxlength="30" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingGuestEmailInput">Guest Email</label>
+          <input id="roomBookingGuestEmailInput" name="guestEmail" type="email" maxlength="320" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingAdultsInput">Adults</label>
+          <input id="roomBookingAdultsInput" name="adults" type="number" min="0" max="100" step="1" value="1" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingChildrenInput">Children</label>
+          <input id="roomBookingChildrenInput" name="children" type="number" min="0" max="100" step="1" value="0" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingSourceInput">Booking Source</label>
+          <select id="roomBookingSourceInput" name="bookingSource">
+            <option value="admin">Admin</option>
+            <option value="walk-in">Walk-in</option>
+            <option value="phone">Phone</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="staff">Staff</option>
+            <option value="online">Online</option>
+          </select>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="roomBookingStatusInput">Booking Status</label>
+          <select id="roomBookingStatusInput" name="bookingStatus">
+            <option value="confirmed">Confirmed</option>
+            <option value="pending">Pending</option>
+            <option value="checked_in">Checked In</option>
+          </select>
+          <p class="admin-field-hint">Checkout should still happen from the booking card after check-in.</p>
+        </div>
+
+        <fieldset class="room-advance-panel" style="grid-column:1/-1;">
+          <legend>Step 5 — Advance Payment</legend>
+          <p class="admin-field-hint">Optional by default. The backend verifies the final booking total, hotel policy, enabled methods, and balance.</p>
+          <div class="room-advance-grid">
+            <div class="admin-field">
+              <label class="admin-field-label" for="roomBookingAdvanceOptionInput">Payment Option</label>
+              <select id="roomBookingAdvanceOptionInput" name="advanceOption">
+                <option value="no_advance">No Advance / Pay Later</option>
+                <option value="partial">Partial Advance</option>
+                <option value="full">Full Advance</option>
+                <option value="split">Split Advance</option>
+              </select>
+            </div>
+            <div class="admin-field" id="roomBookingAdvanceAmountField" hidden>
+              <label class="admin-field-label" for="roomBookingAdvanceInput">Advance Amount (INR)</label>
+              <input id="roomBookingAdvanceInput" name="advancePaid" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" />
+            </div>
+            <div class="admin-field" id="roomBookingPaymentMethodField" hidden>
+              <label class="admin-field-label" for="roomBookingPaymentMethodInput">Payment Method</label>
+              <select id="roomBookingPaymentMethodInput" name="paymentMethod">
+                <option value="">Select method</option>
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+            <option value="bank_transfer">Bank Transfer</option>
+              </select>
+            </div>
+            <div class="admin-field room-advance-split-field" hidden>
+              <label class="admin-field-label" for="roomBookingSplitAmountInput">Second Method Amount (INR)</label>
+              <input id="roomBookingSplitAmountInput" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" />
+            </div>
+            <div class="admin-field room-advance-split-field" hidden>
+              <label class="admin-field-label" for="roomBookingSplitMethodInput">Second Payment Method</label>
+              <select id="roomBookingSplitMethodInput">
+                <option value="">Select method</option>
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+            <option value="bank_transfer">Bank Transfer</option>
+              </select>
+            </div>
+          </div>
+          <p id="roomBookingAdvanceSummary" class="admin-field-hint" aria-live="polite">No payment will be collected during booking creation.</p>
+        </fieldset>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomBookingGuestIdProofInput">ID Proof Note</label>
+          <input id="roomBookingGuestIdProofInput" name="guestIdProof" maxlength="500" placeholder="Optional ID proof reference" />
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="roomBookingNotesInput">Notes</label>
+          <textarea id="roomBookingNotesInput" name="notes" rows="3" maxlength="2000" placeholder="Internal booking notes"></textarea>
+        </div>
+
+        <button type="submit" class="status-btn">Create Manual Booking</button>
+        <button type="button" id="roomBookingCheckAvailabilityBtn" class="status-btn">Check Available Rooms</button>
+        <p id="roomBookingFormHelp" class="admin-field-hint">Final amount is calculated on the backend from the selected room price, tax, and dates.</p>
+      </form>
     </section>
 
     <section id="hotelFormSection" class="admin-card" style="display:none;">
@@ -984,6 +1621,225 @@ body {
       </form>
     </section>
 
+    <section id="menuComboFormSection" class="admin-card" style="display:none; margin-top: 20px;">
+      <h2>Create / Update Combo Offer</h2>
+      <p class="admin-form-help">Use this form to create one sellable combo offer without changing the existing normal menu item flow. Each child item should already exist in the same hotel's menu.</p>
+      <form id="menuComboForm" class="admin-grid">
+        <input id="menuComboDbId" name="id" type="hidden" />
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboHotelSlugInput">Hotel Slug (Required)</label>
+          <input id="menuComboHotelSlugInput" name="hotelSlug" placeholder="hotel-example" required />
+          <p class="admin-field-hint">This usually auto-fills from the selected hotel scope unless you are editing an existing combo.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboCategoryInput">Category (Required)</label>
+          <input id="menuComboCategoryInput" name="category" placeholder="combos" required />
+          <p class="admin-field-hint">Use a stable category like combos so the next public integration step can group these safely.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboItemIdInput">Combo Item ID (Required)</label>
+          <input id="menuComboItemIdInput" name="itemId" placeholder="burger-meal-combo" required />
+          <p class="admin-field-hint">Keep this stable after creation because combo child records are linked to this item key.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboNameInput">Combo Name (Required)</label>
+          <input id="menuComboNameInput" name="name" placeholder="Burger Meal Combo" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboDescriptionInput">Description</label>
+          <textarea id="menuComboDescriptionInput" name="description" rows="4" placeholder="Burger + Fries + Coke"></textarea>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboPriceInput">Combo Price (Required)</label>
+          <input id="menuComboPriceInput" name="price" type="number" min="0" step="0.01" placeholder="249" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboImageInput">Image URL</label>
+          <input id="menuComboImageInput" name="image" type="url" placeholder="https://..." />
+          <p class="admin-field-hint">Paste a public image URL or use the upload helper below.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboStoragePathInput">Storage Path</label>
+          <input id="menuComboStoragePathInput" name="storagePath" placeholder="hotel-example/combos/file.jpg" />
+          <p class="admin-field-hint">Optional for manual URLs. Upload helper fills this when the image comes from storage.</p>
+        </div>
+
+        <button id="menuComboUploadHelperBtn" type="button" class="admin-tab">Upload Image For This Combo</button>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboAltInput">Alt Text</label>
+          <input id="menuComboAltInput" name="alt" placeholder="Describe the combo image" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboBadgeInput">Badge</label>
+          <input id="menuComboBadgeInput" name="badge" placeholder="Combo" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboTagInput">Tag</label>
+          <input id="menuComboTagInput" name="tag" placeholder="best-seller" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboSortOrderInput">Sort Order</label>
+          <input id="menuComboSortOrderInput" name="sortOrder" type="number" min="0" step="1" placeholder="0" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboStartDateInput">Start Date</label>
+          <input id="menuComboStartDateInput" name="startDate" type="date" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboEndDateInput">End Date</label>
+          <input id="menuComboEndDateInput" name="endDate" type="date" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboStartTimeInput">Start Time</label>
+          <input id="menuComboStartTimeInput" name="startTime" type="time" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="menuComboEndTimeInput">End Time</label>
+          <input id="menuComboEndTimeInput" name="endTime" type="time" />
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="menuComboChildItemsInput">Child Items (Required)</label>
+          <textarea id="menuComboChildItemsInput" name="childItems" rows="7" placeholder="burger|1|0&#10;fries|1|1&#10;coke|1|2" required></textarea>
+          <p class="admin-field-hint">Use one child item per line in the format <strong>child_item_id | quantity | sort_order</strong>. Quantity defaults to 1 and sort order defaults to 0 if omitted.</p>
+        </div>
+
+        <label class="admin-checkbox">
+          <input id="menuComboIsAvailableInput" name="isAvailable" type="checkbox" checked />
+          Available
+        </label>
+
+        <button type="submit" class="status-btn">Save Combo Offer</button>
+      </form>
+    </section>
+
+    <section id="popupNotificationFormSection" class="admin-card" style="display:none; margin-top: 20px;">
+      <h2>Create / Update Popup Notification</h2>
+      <p class="admin-form-help">Use this form to manage hotel-specific public popup notifications without touching the main profile, menu, or tenant routing flow.</p>
+      <form id="popupNotificationForm" class="admin-grid">
+        <input id="popupNotificationDbId" name="id" type="hidden" />
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationHotelSlugInput">Hotel Slug (Required)</label>
+          <input id="popupNotificationHotelSlugInput" name="hotelSlug" placeholder="hotel-example" required />
+          <p class="admin-field-hint">This usually auto-fills from the currently selected hotel scope unless you are editing an existing popup.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationTitleInput">Title (Required)</label>
+          <input id="popupNotificationTitleInput" name="title" maxlength="160" placeholder="Festival Offer" required />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationDescriptionInput">Description</label>
+          <textarea id="popupNotificationDescriptionInput" name="description" rows="5" placeholder="Add the offer, announcement, or notice details here."></textarea>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationImageUrlInput">Image URL</label>
+          <input id="popupNotificationImageUrlInput" name="imageUrl" type="url" placeholder="https://..." />
+          <p class="admin-field-hint">Paste a public image URL or use the upload helper below to fill this automatically.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationStoragePathInput">Storage Path</label>
+          <input id="popupNotificationStoragePathInput" name="storagePath" placeholder="hotel-example/popup/file.jpg" />
+          <p class="admin-field-hint">Optional for manual URLs. Upload helper fills this when the image comes from storage.</p>
+        </div>
+
+        <button id="popupNotificationUploadHelperBtn" type="button" class="admin-tab">Upload Image For This Popup</button>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationCtaTextInput">Button Text</label>
+          <input id="popupNotificationCtaTextInput" name="ctaText" maxlength="120" placeholder="View Menu" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationCtaLinkInput">Button Link</label>
+          <input id="popupNotificationCtaLinkInput" name="ctaLink" placeholder="/menu.html or https://example.com/offer" />
+          <p class="admin-field-hint">Use an https URL or a relative path like /menu.html.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationDisplayModeInput">Display Mode</label>
+          <select id="popupNotificationDisplayModeInput" name="displayMode">
+            <option value="once_per_session">Once Per Session</option>
+            <option value="once_per_day">Once Per Day</option>
+            <option value="every_visit">Every Visit</option>
+          </select>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationPriorityInput">Priority</label>
+          <input id="popupNotificationPriorityInput" name="priority" type="number" min="0" step="1" placeholder="0" />
+          <p class="admin-field-hint">Higher numbers win when multiple popup records are active at the same time.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationStartAtInput">Start Date / Time</label>
+          <input id="popupNotificationStartAtInput" name="startAt" type="datetime-local" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="popupNotificationEndAtInput">End Date / Time</label>
+          <input id="popupNotificationEndAtInput" name="endAt" type="datetime-local" />
+        </div>
+
+        <label class="admin-checkbox">
+          <input id="popupNotificationIsActiveInput" name="isActive" type="checkbox" checked />
+          Active
+        </label>
+
+        <button type="submit" class="status-btn">Save Popup Notification</button>
+      </form>
+
+      <div class="popup-preview-shell">
+        <div class="popup-preview-meta">
+          <span id="popupPreviewHotelSlugChip" class="popup-preview-chip">Hotel: not set</span>
+          <span id="popupPreviewDisplayModeChip" class="popup-preview-chip">Mode: once per session</span>
+          <span id="popupPreviewPriorityChip" class="popup-preview-chip">Priority: 0</span>
+          <span id="popupPreviewStatusChip" class="popup-preview-chip">Active</span>
+        </div>
+
+        <div class="popup-preview-card">
+          <button type="button" class="popup-preview-close" aria-label="Preview close button" tabindex="-1">
+            <i class="fas fa-times" aria-hidden="true"></i>
+          </button>
+          <div id="popupNotificationPreviewImageWrap" class="popup-preview-media" hidden>
+            <img id="popupNotificationPreviewImage" alt="" />
+          </div>
+          <div class="popup-preview-body">
+            <p class="popup-preview-eyebrow">Hotel Update</p>
+            <h3 id="popupNotificationPreviewTitle" class="popup-preview-title">Festival Offer</h3>
+            <p id="popupNotificationPreviewDescription" class="popup-preview-description">Your popup preview updates live as you type so you can check title length, spacing, image fit, and CTA copy before saving.</p>
+            <label id="popupNotificationPreviewDismissOption" class="popup-preview-dismiss">
+              <input type="checkbox" disabled />
+              <span>Don't show again today</span>
+            </label>
+            <a id="popupNotificationPreviewCta" href="#" class="popup-preview-cta" hidden tabindex="-1">View Offer</a>
+          </div>
+        </div>
+
+        <p class="admin-field-hint">This preview is local to the admin page and does not publish anything until you save.</p>
+      </div>
+    </section>
+
     <section id="notificationSettingsSection" class="admin-card" style="display:none; margin-top: 20px;">
       <h2>Per-Hotel Notification Settings</h2>
       <p class="admin-sub">These settings are private and control optional delivery behavior for one hotel only.</p>
@@ -1060,6 +1916,84 @@ body {
 
         <button type="submit" class="status-btn">Save Payment Route Settings</button>
         <p id="paymentRouteSettingsHelp" class="admin-field-hint">Route settings are not loaded yet.</p>
+      </form>
+    </section>
+
+    <section id="orderingSettingsSection" class="admin-card" style="display:none; margin-top: 20px;">
+      <h2>Per-Hotel Online Ordering Control</h2>
+      <p class="admin-sub">Hotel owners can pause customer online ordering without hiding the menu, combos, gallery, or profile.</p>
+      <p class="admin-form-help">This editor changes only hotel-wise ordering availability and the public disabled-ordering message. It does not change staff ordering, tenant routing, menu data, popup notifications, or payment setup outside the saved flags below.</p>
+
+      <form id="orderingSettingsForm" class="admin-grid">
+        <div class="admin-field">
+          <label class="admin-field-label" for="orderingSettingsHotelSlugInput">Hotel Slug (Required)</label>
+          <input id="orderingSettingsHotelSlugInput" placeholder="hotel-example" required />
+          <p class="admin-field-hint">This usually auto-fills from the selected hotel scope.</p>
+        </div>
+
+        <label class="admin-checkbox">
+          <input id="orderingCustomerEnabledInput" type="checkbox" checked />
+          Accept Customer Online Orders
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="orderingStaffEnabledInput" type="checkbox" checked />
+          Keep Staff-Assisted Ordering Enabled
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="orderingWhatsappEnabledInput" type="checkbox" checked />
+          Keep WhatsApp Ordering Enabled
+        </label>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <h3>Customer Payment Methods</h3>
+          <p class="admin-field-hint">These switches are hotel-scoped. Global gateway readiness still controls whether Secure Online Payment can actually open.</p>
+        </div>
+
+        <label class="admin-checkbox">
+          <input id="orderingSecureOnlinePaymentEnabledInput" type="checkbox" checked />
+          Secure Online Payment
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="orderingCashOnDeliveryEnabledInput" type="checkbox" checked />
+          COD / Cash on Delivery
+        </label>
+
+        <label class="admin-checkbox">
+          <input id="orderingManualUpiPaymentEnabledInput" type="checkbox" checked />
+          Google Pay / UPI (manual confirmation)
+        </label>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="orderingDisabledTitleInput">Disabled Title</label>
+          <input id="orderingDisabledTitleInput" maxlength="160" placeholder="We're Not Accepting Online Orders" />
+        </div>
+
+        <div class="admin-field" style="grid-column: 1 / -1;">
+          <label class="admin-field-label" for="orderingDisabledMessageInput">Disabled Message</label>
+          <textarea id="orderingDisabledMessageInput" rows="4" maxlength="1000" placeholder="We're unable to receive online orders right now. Please visit the restaurant or contact us directly."></textarea>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="orderingDisabledButtonTextInput">Optional Button Text</label>
+          <input id="orderingDisabledButtonTextInput" maxlength="120" placeholder="Call Restaurant" />
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="orderingDisabledButtonLinkInput">Optional Button Link</label>
+          <input id="orderingDisabledButtonLinkInput" maxlength="2000" placeholder="/contact or https://example.com/call" />
+          <p class="admin-field-hint">Use an https URL or a relative path like /contact.</p>
+        </div>
+
+        <div class="admin-field">
+          <label class="admin-field-label" for="orderingDisabledIconInput">Optional Icon</label>
+          <input id="orderingDisabledIconInput" maxlength="40" placeholder="⚠️" />
+        </div>
+
+        <button type="submit" class="status-btn">Save Ordering Settings</button>
+        <p id="orderingSettingsHelp" class="admin-field-hint">Ordering settings are not loaded yet.</p>
       </form>
     </section>
 
@@ -1741,7 +2675,10 @@ body {
 
   </div>
   
-<script src="js/app-config.js"></script>
+<script src="js/app-config.js" defer></script>
+  <script src="js/login-branding.js" defer></script>
+  <script src="js/room-checkout-receipt.js" defer></script>
   <script src="js/admin.js" defer></script>
+  <script src="js/admin-login-branding.js" defer></script>
 </body>
 </html>

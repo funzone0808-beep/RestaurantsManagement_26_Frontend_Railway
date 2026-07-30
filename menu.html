@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="app-backend-base-url" content="https://restaurantsmanagement26backend-production.up.railway.app" />
-  <meta name="app-api-base-url" content="https://restaurantsmanagement26backend-production.up.railway.app/api" />
+<meta name="app-backend-base-url" content="https://production-backend-fc-01-1.onrender.com" />
+<meta name="app-api-base-url" content="https://production-backend-fc-01-1.onrender.com/api" />
 <meta name="app-allow-order-whatsapp-fallback-on-save-failure" content="false" />
 <meta name="app-open-whatsapp-after-verified-online-payment" content="true" />
+<meta name="app-room-combined-checkout-frontend-enabled" content="false" />
 <meta name="app-contact-sheet-url" content="" />
 
   <title>Hotel Full Menu</title>
   <meta name="description" content="Browse the full hotel menu with search, sorting, category filters, cart, and ordering options." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,600&family=Jost:wght@200;300;400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.4/dist/gsap.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.4/dist/ScrollTrigger.min.js" defer></script>
@@ -21,8 +22,9 @@
   <link rel="stylesheet" href="css/menu-page.css" />
 </head>
 <body class="menu-page app-booting">
-  <div class="cursor-dot" id="cursorDot"></div>
-  <div class="cursor-ring" id="cursorRing"></div>
+  <a class="skip-link" href="#mainContent">Skip to menu</a>
+  <div class="cursor-dot" id="cursorDot" aria-hidden="true"></div>
+  <div class="cursor-ring" id="cursorRing" aria-hidden="true"></div>
 
   <div id="loader" class="loader" role="status" aria-label="Loading">
     <div class="loader-inner">
@@ -34,6 +36,8 @@
     </div>
   </div>
 
+  <div id="notificationRegion" class="notification-region" aria-live="polite" aria-atomic="false" aria-relevant="additions text"></div>
+
   <div id="pageShell">
 
   <nav class="navbar scrolled" id="navbar" role="navigation" aria-label="Main navigation">
@@ -41,7 +45,7 @@
       <a href="index.html#hero" class="nav-logo" aria-label="Hotel home">
         <span class="logo-a">Hotel</span><span class="logo-urum"></span>
       </a>
-      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">
+      <button type="button" class="nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="navLinks">
         <span></span><span></span><span></span>
       </button>
       <ul class="nav-links" id="navLinks" role="list">
@@ -54,13 +58,13 @@
     </div>
   </nav>
 
-  <main class="menu-page-main">
+  <main id="mainContent" class="menu-page-main" tabindex="-1">
     <section id="menu" class="menu-section section" aria-label="Restaurant Full Menu">
       <div class="container">
         <div class="section-header">
           <p class="section-eyebrow reveal-text" id="menuSectionEyebrow">Complete Selection</p>
           <h1 class="section-title reveal-text light" id="menuSectionTitle">Browse the Full <em>Menu</em></h1>
-          <p class="section-sub reveal-text" id="menuSectionSubtitle" style="color: rgba(255,255,255,0.74); margin: 0 auto;">
+          <p class="section-sub reveal-text" id="menuSectionSubtitle">
             Search across categories, sort dishes, filter tags, and place your order on WhatsApp.
           </p>
         </div>
@@ -109,7 +113,7 @@
         </div>
 
         <div class="menu-cart-toolbar reveal-text">
-          <button id="openCartBtn" class="btn btn-primary">
+          <button type="button" id="openCartBtn" class="btn btn-primary" aria-expanded="false" aria-controls="cartDrawer">
             <i class="fas fa-shopping-cart" aria-hidden="true"></i>
             <span data-cta-label="cartButton">View Cart</span>
             <span id="cartCount" class="cart-count-badge">0</span>
@@ -125,14 +129,14 @@
     </section>
   </main>
 
-  <div id="cartBackdrop" class="cart-backdrop" hidden></div>
-  <aside id="cartDrawer" class="cart-drawer" aria-label="Food cart" hidden>
+  <div id="cartBackdrop" class="cart-backdrop" hidden aria-hidden="true"></div>
+  <aside id="cartDrawer" class="cart-drawer" role="dialog" aria-modal="true" aria-labelledby="cartDrawerTitle" aria-hidden="true" tabindex="-1" hidden>
     <div class="cart-drawer-head">
       <div>
         <p class="section-eyebrow">Your Order</p>
-        <h3 class="cart-drawer-title">Food Cart</h3>
+        <h3 class="cart-drawer-title" id="cartDrawerTitle">Food Cart</h3>
       </div>
-      <button id="closeCartBtn" class="cart-close-btn" aria-label="Close cart"><i class="fas fa-times" aria-hidden="true"></i></button>
+      <button type="button" id="closeCartBtn" class="cart-close-btn" aria-label="Close cart"><i class="fas fa-times" aria-hidden="true"></i></button>
     </div>
     <div id="cartItems" class="cart-items-wrap"><p class="cart-empty-text">Your cart is empty.</p></div>
     <div class="cart-totals glass-card">
@@ -208,11 +212,11 @@
     </form>
     <div class="order-preview-wrap"><h4>Order Summary Preview</h4><pre id="orderPreview" class="order-preview-text">No order yet.</pre></div>
   </aside>
-  <button id="floatingCartBtn" class="floating-cart-btn" aria-label="Open cart"><i class="fas fa-shopping-cart" aria-hidden="true"></i><span id="floatingCartCount">0</span></button>
+  <button type="button" id="floatingCartBtn" class="floating-cart-btn" aria-label="Open cart" aria-expanded="false" aria-controls="cartDrawer"><i class="fas fa-shopping-cart" aria-hidden="true"></i><span id="floatingCartCount">0</span></button>
 
   <div id="waFallbackModal" class="wa-fallback" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="waFallbackTitle">
     <div class="wa-fallback__backdrop" data-wa-close></div>
-    <div class="wa-fallback__dialog glass-card" role="document">
+    <div class="wa-fallback__dialog glass-card" role="document" tabindex="-1">
       <button type="button" class="wa-fallback__close" aria-label="Close WhatsApp fallback dialog" data-wa-close><i class="fas fa-times" aria-hidden="true"></i></button>
       <!-- <div class="wa-fallback__icon" aria-hidden="true"><i class="fab fa-whatsapp"></i></div> -->
       <h3 id="waFallbackTitle">WhatsApp could not open automatically</h3>
@@ -224,10 +228,10 @@
   </div>
 
   <!-- <script src="js/data.js"></script> -->
-   <script src="js/app-config.js"></script>
-  <script src="js/data-loader.js"></script>
-  <script src="js/assistant-action-bridge.js"></script>
-  <script src="js/main.js"></script>
+   <script src="js/app-config.js" defer></script>
+  <script src="js/data-loader.js" defer></script>
+  <script src="js/assistant-action-bridge.js" defer></script>
+  <script src="js/main.js" defer></script>
 
 </body>
 </html>

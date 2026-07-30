@@ -1,5 +1,8 @@
 .tracking-page {
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-x: clip;
   background:
     radial-gradient(circle at top left, rgba(201, 168, 76, 0.24), transparent 34rem),
     linear-gradient(135deg, #11100e 0%, #211d18 42%, #f6efe2 42%, #f9f5ec 100%);
@@ -10,6 +13,7 @@
   width: min(1160px, 92vw);
   margin: 0 auto;
   padding: 52px 0 72px;
+  min-width: 0;
 }
 
 .tracking-hero {
@@ -32,7 +36,8 @@
 
 .tracking-card {
   position: relative;
-  overflow: hidden;
+  min-width: 0;
+  overflow: visible;
   border: 1px solid rgba(201, 168, 76, 0.22);
   border-radius: 30px;
   background: rgba(255, 252, 245, 0.88);
@@ -42,6 +47,7 @@
 
 .tracking-card--hero {
   max-width: 760px;
+  overflow: hidden;
   padding: clamp(28px, 5vw, 54px);
   color: #fff;
   background:
@@ -54,7 +60,7 @@
   max-width: 680px;
   font-family: var(--font-display);
   font-size: clamp(3rem, 8vw, 6.6rem);
-  line-height: 0.88;
+  line-height: 0.96;
   letter-spacing: -0.05em;
 }
 
@@ -596,6 +602,10 @@
   color: var(--text-muted);
 }
 
+.tracking-item-meta {
+  font-size: 0.92rem;
+}
+
 .tracking-addons {
   display: grid;
   gap: 14px;
@@ -664,7 +674,21 @@
 .tracking-addon-item {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 12px;
+  color: var(--text-muted);
+}
+
+.tracking-addon-item__detail {
+  display: grid;
+  gap: 4px;
+}
+
+.tracking-addon-item__detail strong {
+  color: var(--charcoal);
+}
+
+.tracking-addon-item__detail span {
   color: var(--text-muted);
 }
 
@@ -962,5 +986,71 @@
   .tracking-bill-view__meta div,
   .tracking-bill-block {
     padding-inline: 16px;
+  }
+}
+
+
+/* ===== TRACKING PAGE RELEASE SAFETY ===== */
+.tracking-grid > *,
+.tracking-panel__head > *,
+.tracking-smart-waiter__head > *,
+.tracking-item > *,
+.tracking-addon-item > *,
+.tracking-bill-item > *,
+.tracking-bill-view__meta > *,
+.tracking-bill-view__body > * {
+  min-width: 0;
+}
+
+.tracking-title,
+.tracking-subtitle,
+.tracking-status-detail,
+.tracking-message,
+.tracking-facts dd,
+.tracking-totals dd,
+.tracking-item,
+.tracking-addon-item,
+.tracking-bill-item,
+.tracking-bill-view__meta strong,
+.tracking-smart-waiter__answer,
+.tracking-smart-waiter__disclaimer,
+.tracking-smart-waiter__preview-message {
+  overflow-wrap: anywhere;
+}
+
+.tracking-card:focus-within {
+  box-shadow:
+    0 28px 80px rgba(23, 21, 18, 0.16),
+    0 0 0 3px rgba(201, 168, 76, 0.12);
+}
+
+@media (max-width: 560px) {
+  .tracking-shell {
+    width: min(100% - 24px, 1160px);
+    padding-bottom: max(36px, env(safe-area-inset-bottom));
+  }
+
+  .tracking-card {
+    border-radius: 22px;
+  }
+
+  .tracking-smart-waiter__head {
+    flex-direction: column;
+  }
+
+  .tracking-smart-waiter__chip,
+  .tracking-smart-waiter__helper-btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tracking-page *,
+  .tracking-page *::before,
+  .tracking-page *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

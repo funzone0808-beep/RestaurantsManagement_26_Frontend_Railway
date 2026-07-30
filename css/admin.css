@@ -1,0 +1,302 @@
+/* Admin dashboard release-safety layer.
+   Loaded last and scoped to .admin-page so receipt and public-page styles remain isolated. */
+
+.admin-page,
+.admin-page *,
+.admin-page *::before,
+.admin-page *::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 0;
+  background: #111;
+}
+
+body.admin-page {
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+.admin-page .admin-wrap,
+.admin-page .admin-toolbar-row,
+.admin-page .admin-toolbar-group,
+.admin-page .admin-toolbar-side,
+.admin-page .admin-section,
+.admin-page .admin-card,
+.admin-page .admin-grid,
+.admin-page .admin-field,
+.admin-page .admin-scope-grid,
+.admin-page .admin-scope-item,
+.admin-page .status-row,
+.admin-page .theme-order-item,
+.admin-page .theme-order-label,
+.admin-page .theme-order-meta,
+.admin-page .theme-preview-top,
+.admin-page .theme-preview-surface,
+.admin-page .theme-preview-actions {
+  min-width: 0;
+}
+
+.admin-page .admin-wrap {
+  width: 100%;
+}
+
+.admin-page .admin-boot-status {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #111;
+  color: #ddd;
+  text-align: center;
+}
+
+.admin-page .admin-boot-status[hidden] {
+  display: none;
+}
+
+.admin-page .admin-skip-link {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 1100;
+  max-width: calc(100vw - 20px);
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #c9a84c;
+  color: #111;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-160%);
+  transition: transform 160ms ease;
+}
+
+.admin-page .admin-skip-link:focus {
+  transform: translateY(0);
+}
+
+.admin-page section.admin-card[id$="Section"] {
+  max-height: none;
+  overflow: visible;
+  scroll-margin-top: 16px;
+}
+
+.admin-page .admin-toolbar-side {
+  max-width: 100%;
+}
+
+.admin-page .admin-tabs,
+.admin-page .admin-toolbar-actions,
+.admin-page .status-row,
+.admin-page .theme-order-actions,
+.admin-page .theme-preview-actions {
+  max-width: 100%;
+}
+
+.admin-page :where(
+  #adminLoginForm,
+  section.admin-card[id$="Section"]
+) :where(
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]):not([type="range"]),
+  select,
+  textarea
+) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #444;
+  border-radius: 8px;
+  background: #161616;
+  color: #fff;
+  padding: 12px 14px;
+  caret-color: #fff;
+  font: inherit;
+  -webkit-text-fill-color: #fff;
+}
+
+.admin-page :where(
+  #adminLoginForm,
+  section.admin-card[id$="Section"]
+) :where(input[type="file"]) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  color: #ddd;
+}
+
+.admin-page :where(
+  #adminLoginForm,
+  section.admin-card[id$="Section"]
+) :where(textarea) {
+  resize: vertical;
+}
+
+.admin-page :where(
+  #adminLoginForm,
+  section.admin-card[id$="Section"]
+) :where(
+  input:not([type="hidden"]),
+  select,
+  textarea,
+  button,
+  a[href]
+):focus-visible,
+.admin-page :where(
+  .admin-tab,
+  .status-btn,
+  .admin-select,
+  .admin-list-search
+):focus-visible {
+  outline: 3px solid rgba(243, 217, 142, 0.92);
+  outline-offset: 2px;
+  border-color: #c9a84c;
+}
+
+.admin-page .admin-inline-status {
+  min-height: 1.4em;
+  margin: 0;
+  color: #ffc1c1;
+  line-height: 1.4;
+}
+
+.admin-page .admin-inline-status:empty {
+  min-height: 0;
+}
+
+.admin-page .admin-tab,
+.admin-page .status-btn,
+.admin-page .admin-select {
+  min-height: 42px;
+  max-width: 100%;
+}
+
+.admin-page .admin-tab,
+.admin-page .status-btn,
+.admin-page .status-badge,
+.admin-page .admin-row,
+.admin-page .admin-meta,
+.admin-page .admin-toolbar-help,
+.admin-page .admin-field-hint,
+.admin-page .admin-scope-value,
+.admin-page .theme-order-name,
+.admin-page .theme-preview-title,
+.admin-page .theme-preview-body,
+.admin-page .theme-preview-muted,
+.admin-page code,
+.admin-page a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.admin-page .admin-card img,
+.admin-page .popup-preview-media img {
+  max-width: 100%;
+}
+
+.admin-page .room-advance-panel {
+  border-color: rgba(201, 168, 76, 0.38);
+  background: rgba(201, 168, 76, 0.08);
+  color: #f3f3f3;
+}
+
+.admin-page .room-advance-panel legend {
+  color: #f3d98e;
+}
+
+.admin-page .admin-section[aria-busy="true"] {
+  cursor: progress;
+}
+
+@media (max-width: 720px) {
+  .admin-page .admin-wrap {
+    padding: 16px;
+  }
+
+  .admin-page .admin-title {
+    font-size: clamp(26px, 9vw, 32px);
+    overflow-wrap: anywhere;
+  }
+
+  .admin-page .admin-toolbar-group,
+  .admin-page .admin-toolbar-side {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  .admin-page .admin-scope-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-page .popup-preview-body {
+    min-width: 0;
+  }
+
+  .admin-page .theme-order-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .admin-page .theme-order-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .admin-page .theme-preview-top,
+  .admin-page .theme-preview-actions {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-page .admin-wrap {
+    padding: 12px;
+  }
+
+  .admin-page .admin-card,
+  .admin-page .admin-toolbar-group,
+  .admin-page .admin-toolbar-side {
+    padding: 14px;
+  }
+
+  .admin-page .admin-tabs,
+  .admin-page .admin-toolbar-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-page .admin-tabs .admin-tab,
+  .admin-page .admin-toolbar-actions .admin-tab,
+  .admin-page .admin-toolbar-side > .admin-tab,
+  .admin-page .admin-toolbar-side > .admin-select {
+    width: 100%;
+  }
+
+  .admin-page .status-row > :where(button, select, a.admin-tab) {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .admin-page .popup-preview-body {
+    padding: 20px 16px 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-page *,
+  .admin-page *::before,
+  .admin-page *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
+}

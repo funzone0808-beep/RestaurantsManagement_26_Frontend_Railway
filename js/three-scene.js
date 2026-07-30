@@ -6,9 +6,23 @@
 (function () {
   "use strict";
 
+  let sceneStarted = false;
+
+  function startHeroScene() {
+  if (sceneStarted) return;
+  sceneStarted = true;
+
   const canvas = document.getElementById("heroCanvas");
   const heroSection = document.getElementById("hero");
   if (!canvas || typeof THREE === "undefined") return;
+
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const saveData = Boolean(navigator.connection?.saveData);
+  if (reducedMotion || saveData) {
+    canvas.hidden = true;
+    if (heroSection) heroSection.dataset.heroSceneEnabled = "false";
+    return;
+  }
 
   const HERO_SCENE_DEFAULTS = {
     enabled: true,
@@ -1180,9 +1194,32 @@
   });
 
   const clock = new THREE.Clock();
+  let animationFrameId = 0;
+  let heroIsVisible = true;
+  let pageIsVisible = !document.hidden;
+
+  function scheduleAnimation() {
+    if (!animationFrameId && heroIsVisible && pageIsVisible) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
+  }
+
+  const heroObserver = typeof IntersectionObserver === "function"
+    ? new IntersectionObserver(([entry]) => {
+        heroIsVisible = Boolean(entry?.isIntersecting);
+        scheduleAnimation();
+      }, { rootMargin: "120px 0px" })
+    : null;
+  heroObserver?.observe(heroSection || canvas);
+
+  document.addEventListener("visibilitychange", () => {
+    pageIsVisible = !document.hidden;
+    scheduleAnimation();
+  });
 
   function animate() {
-    requestAnimationFrame(animate);
+    animationFrameId = 0;
+    if (!heroIsVisible || !pageIsVisible) return;
     const elapsed = clock.getElapsedTime();
     const sceneConfig = getHeroSceneRuntimeConfig();
     const sceneEnabled = sceneConfig.enabled !== false;
@@ -1271,7 +1308,15 @@
     });
 
     renderer.render(scene, camera);
+    scheduleAnimation();
   }
 
-  animate();
+  scheduleAnimation();
+  }
+
+  if (document.body?.classList.contains("app-ready")) {
+    startHeroScene();
+  } else {
+    document.addEventListener("app:ready", startHeroScene, { once: true });
+  }
 })();

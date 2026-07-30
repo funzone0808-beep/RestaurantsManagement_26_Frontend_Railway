@@ -5,6 +5,10 @@ window.APP_STATE = {
   menu: null,
   testimonials: [],
   gallery: [],
+  popupNotifications: [],
+  popupNotification: null,
+  secondaryDataReady: false,
+  ordering: null,
   heroScene: {},
   loadingScreen: {},
   theme: {},
@@ -74,7 +78,7 @@ function getDefaultApiBaseUrl() {
     hostname.endsWith(".localhost");
   const baseUrl =
     isLocalHost || !window.location.origin || window.location.origin === "null"
-      ? "http://localhost:5000"
+      ? `http://${hostname || "localhost"}:5000`
       : window.location.origin;
 
   return `${baseUrl.replace(/\/+$/, "")}/api`;
@@ -85,6 +89,61 @@ const API_BASE =
 
 const TENANT_API_BASE = `${API_BASE}/tenant`;
 const PUBLIC_API_BASE = `${API_BASE}/public`;
+let SECURE_QR_BOOTSTRAP = null;
+const SECURE_QR_CSRF_STORAGE_KEY = "secure_qr_csrf_v1";
+const SECURE_QR_TAG_STORAGE_KEY = "secure_qr_context_tag_v1";
+
+function getOpaqueQrTokenFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const token = normalizeOrderContextParam(params.get("q"), 200);
+  return token.startsWith("q1_") ? token : "";
+}
+
+
+function rememberQrCsrfToken(token, qrToken = "") {
+  try {
+    window.sessionStorage?.setItem(SECURE_QR_CSRF_STORAGE_KEY, token);
+    window.sessionStorage?.setItem(SECURE_QR_TAG_STORAGE_KEY, `${qrToken.slice(0, 12)}:${qrToken.length}`);
+  } catch {
+    // The HttpOnly session cookie remains authoritative; storage is only for the CSRF proof.
+  }
+}
+
+async function fetchSecureQrBootstrap() {
+  const token = getOpaqueQrTokenFromQuery();
+  if (!token) return null;
+  if (SECURE_QR_BOOTSTRAP?.token === token) return SECURE_QR_BOOTSTRAP;
+
+  const contextResponse = await fetch(
+    `${PUBLIC_API_BASE}/qr/${encodeURIComponent(token)}/context`,
+    { credentials: "include", cache: "no-store" }
+  );
+  const contextPayload = await contextResponse.json().catch(() => ({}));
+  if (!contextResponse.ok) {
+    const error = new Error(contextPayload.message || "This QR code is invalid or no longer active.");
+    error.status = contextResponse.status;
+    error.code = contextPayload.code || "INVALID_QR";
+    throw error;
+  }
+
+  const sessionResponse = await fetch(
+    `${PUBLIC_API_BASE}/qr/${encodeURIComponent(token)}/session`,
+    { method: "POST", credentials: "include", cache: "no-store" }
+  );
+  const sessionPayload = await sessionResponse.json().catch(() => ({}));
+  if (!sessionResponse.ok) {
+    const error = new Error(sessionPayload.message || "A secure QR ordering session could not be started.");
+    error.status = sessionResponse.status;
+    error.code = sessionPayload.code || "QR_SESSION_FAILED";
+    throw error;
+  }
+  const csrfToken = normalizeOrderContextParam(sessionPayload.csrfToken, 200);
+  const session = sessionPayload.session || null;
+  rememberQrCsrfToken(csrfToken, token);
+
+  SECURE_QR_BOOTSTRAP = { token, csrfToken, context: contextPayload, session };
+  return SECURE_QR_BOOTSTRAP;
+}
 const SUPPORTED_THEME_SECTION_ORDER = [
   "about",
   "menu",
@@ -209,6 +268,22 @@ function normalizeOrderContextParam(value, maxLength = 80) {
 
 function getOrderContextFromQuery() {
   const params = new URLSearchParams(window.location.search);
+  const secureQr = SECURE_QR_BOOTSTRAP;
+  if (secureQr?.token && secureQr?.context?.table?.displayCode) {
+    return {
+      orderType: "dine-in",
+      tableNumber: normalizeOrderContextParam(secureQr.context.table.displayCode, 80),
+      orderSource: "qr",
+      qrContextToken: "",
+      opaqueQrToken: secureQr.token,
+      qrCsrfToken: secureQr.csrfToken || "",
+      qrSessionVersion: Number(secureQr.session?.version || 1),
+      addToOrderId: "",
+      addToken: "",
+      secureQr: true
+    };
+  }
+
   const tableNumber = normalizeOrderContextParam(
     params.get("table") || params.get("tableNumber"),
     80
@@ -346,6 +421,51 @@ function normalizeThemeStringList(value, maxLength = 120, maxItems = 6) {
     items.push(candidate);
     return items;
   }, []);
+}
+
+function normalizeOrderingLink(value = "") {
+  const candidate = normalizeThemeString(value, 2000);
+
+  if (!candidate) {
+    return "";
+  }
+
+  if (candidate.startsWith("/")) {
+    return candidate;
+  }
+
+  try {
+    const parsedUrl = new URL(candidate, window.location.origin);
+    return ["http:", "https:"].includes(parsedUrl.protocol) ? parsedUrl.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeHotelOrdering(rawOrdering) {
+  if (!isPlainObject(rawOrdering)) {
+    return {
+      customerOrderingEnabled: true,
+      staffOrderingEnabled: true,
+      whatsappOrderingEnabled: true,
+      title: "",
+      message: "",
+      buttonText: "",
+      buttonLink: "",
+      icon: ""
+    };
+  }
+
+  return {
+    customerOrderingEnabled: rawOrdering.customerOrderingEnabled !== false,
+    staffOrderingEnabled: rawOrdering.staffOrderingEnabled !== false,
+    whatsappOrderingEnabled: rawOrdering.whatsappOrderingEnabled !== false,
+    title: normalizeThemeString(rawOrdering.title, 160),
+    message: normalizeThemeString(rawOrdering.message, 1000),
+    buttonText: normalizeThemeString(rawOrdering.buttonText, 120),
+    buttonLink: normalizeOrderingLink(rawOrdering.buttonLink),
+    icon: normalizeThemeString(rawOrdering.icon, 40)
+  };
 }
 
 function normalizeLoadingScreenConfig(rawLoadingScreen) {
@@ -703,6 +823,53 @@ function normalizeTestimonials(rawTestimonials) {
   return rawTestimonials.map((item) => normalizeTestimonialItem(item)).filter(Boolean);
 }
 
+function normalizePopupNotification(rawNotification) {
+  if (!isPlainObject(rawNotification)) {
+    return null;
+  }
+
+  const title = normalizeThemeString(rawNotification.title, 160);
+
+  if (!title) {
+    return null;
+  }
+
+  return {
+    id: rawNotification.id ?? "",
+    hotelSlug: normalizeThemeString(rawNotification.hotelSlug, 120),
+    title,
+    description: normalizeThemeString(rawNotification.description, 4000),
+    imageUrl: normalizeThemeString(rawNotification.imageUrl, 2000),
+    storagePath: normalizeThemeString(rawNotification.storagePath, 500),
+    ctaText: normalizeThemeString(rawNotification.ctaText, 120),
+    ctaLink: normalizeThemeString(rawNotification.ctaLink, 2000),
+    displayMode:
+      normalizeThemeString(rawNotification.displayMode, 40).toLowerCase() ||
+      "once_per_session",
+    startAt: normalizeThemeString(rawNotification.startAt, 80),
+    endAt: normalizeThemeString(rawNotification.endAt, 80),
+    priority: Number.isFinite(Number(rawNotification.priority))
+      ? Number(rawNotification.priority)
+      : 0
+  };
+}
+
+function normalizePopupNotifications(rawNotifications) {
+  if (!Array.isArray(rawNotifications)) {
+    return [];
+  }
+
+  return rawNotifications
+    .map((item) => normalizePopupNotification(item))
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftPriority = Number.isFinite(Number(left?.priority)) ? Number(left.priority) : 0;
+      const rightPriority = Number.isFinite(Number(right?.priority)) ? Number(right.priority) : 0;
+
+      return rightPriority - leftPriority;
+    });
+}
+
 function normalizePublicMenuCategoryKey(value) {
   const candidate = normalizeThemeString(value, 80).toLowerCase();
 
@@ -1020,6 +1187,12 @@ async function resolveHotelSlug() {
   const localRuntime = isLocalhost(host);
   const querySlug = normalizeHotelSlug(getHotelSlugFromQuery());
 
+  const secureQr = await fetchSecureQrBootstrap();
+  const secureHotelSlug = normalizeHotelSlug(secureQr?.context?.resolvedHotelSlug);
+  if (secureHotelSlug) {
+    return secureHotelSlug;
+  }
+
   if (querySlug && localRuntime) {
     rememberHotelSlug(querySlug);
     return querySlug;
@@ -1069,6 +1242,7 @@ function mapHotelProfileToFrontendShape(rawHotel) {
     contact: rawHotel.contact || {},
     branding: rawHotel.branding || {},
     theme: normalizeTheme(rawHotel.theme),
+    ordering: normalizeHotelOrdering(rawHotel.ordering),
     hero,
     about,
     features: rawHotel.features || [],
@@ -1113,6 +1287,24 @@ async function loadAppData({
         })
     : Promise.resolve([]);
 
+  const popupNotificationPromise = fetchJson(`${PUBLIC_API_BASE}/popup-notification/${hotelSlug}`)
+    .then((notificationResult) =>
+      normalizePopupNotifications(
+        Array.isArray(notificationResult.notifications)
+          ? notificationResult.notifications
+          : notificationResult.notification
+            ? [notificationResult.notification]
+            : []
+      )
+    )
+    .catch((error) => {
+      console.warn(
+        "Failed to load popup notification data. Falling back to no popup notifications.",
+        error
+      );
+      return [];
+    });
+
   let hotelResult;
   let menuResult;
 
@@ -1143,14 +1335,39 @@ async function loadAppData({
 
     throw error;
   }
-  const [gallery, testimonials] = await Promise.all([galleryPromise, testimonialsPromise]);
+  const secondaryDataPromise = Promise.all([
+    galleryPromise,
+    testimonialsPromise,
+    popupNotificationPromise
+  ]).then(([gallery, testimonials, popupNotifications]) => {
+    window.APP_STATE.gallery = gallery;
+    window.APP_STATE.testimonials = testimonials;
+    window.APP_STATE.popupNotifications = popupNotifications;
+    window.APP_STATE.popupNotification = popupNotifications[0] || null;
+    window.APP_STATE.secondaryDataReady = true;
+    document.dispatchEvent(
+      new CustomEvent("app:secondary-ready", {
+        detail: {
+          galleryCount: gallery.length,
+          testimonialCount: testimonials.length,
+          popupNotificationCount: popupNotifications.length
+        }
+      })
+    );
+    return { gallery, testimonials, popupNotifications };
+  });
+  window.APP_SECONDARY_DATA_PROMISE = secondaryDataPromise;
 
   const hotel = mapHotelProfileToFrontendShape(hotelResult.hotel);
   const normalizedMenu = normalizePublicMenu(menuResult.menu);
 
   window.APP_STATE.hotel = hotel;
-  window.APP_STATE.gallery = gallery;
-  window.APP_STATE.testimonials = testimonials;
+  window.APP_STATE.gallery = [];
+  window.APP_STATE.testimonials = [];
+  window.APP_STATE.popupNotifications = [];
+  window.APP_STATE.popupNotification = null;
+  window.APP_STATE.secondaryDataReady = false;
+  window.APP_STATE.ordering = hotel.ordering || normalizeHotelOrdering(null);
   window.APP_STATE.heroScene = hotel.hero?.scene || { ...DEFAULT_HERO_SCENE_CONFIG };
   window.APP_STATE.menu = normalizedMenu;
   window.APP_STATE.theme = hotel.theme || {};
